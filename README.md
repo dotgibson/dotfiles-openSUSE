@@ -199,6 +199,6 @@ Project Link: [dotgibson](https://github.com/dotgibson/)
 [zypper-shield]: https://img.shields.io/badge/Zypper-73BA25?style=flat-square
 [zypper-url]: https://en.opensuse.org/SDB:Zypper_usage
 [snapper-shield]: https://img.shields.io/badge/Btrfs_·_Snapper-425265?style=flat-square
-[snapper-url]: http://snapper.io
+[snapper-url]: https://snapper.io
 [apparmor-shield]: https://img.shields.io/badge/AppArmor-425265?style=flat-square
 [apparmor-url]: https://apparmor.net
