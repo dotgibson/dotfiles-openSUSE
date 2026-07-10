@@ -30,7 +30,7 @@ sd             # sed (find/replace)
 gron           # greppable JSON
 glow           # markdown renderer
 gum            # shell-script UI toolkit
-xh             # HTTPie-alike (HTTP client)
+xh             # HTTPie-like (HTTP client)
 yq             # openSUSE `yq` = mikefarah's Go v4 build (HIGH confidence). `python-yq` is a SEPARATE package.
 # doggo (DNS), carapace (completions), sesh (tmux sessions), op (1Password CLI)
 # are go/vendor tools — installed by bootstrap.sh, not packaged here.

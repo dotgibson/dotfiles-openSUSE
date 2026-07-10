@@ -94,13 +94,21 @@ zypper_install() {
 # (skips if the binary already exists), tolerant of a missing Go toolchain, and
 # never aborts the run.
 _dotfiles_go_install() { # <import-path@version> <binary-name>
+  [ "$#" -ge 2 ] || return 0
   if command -v "$2" >/dev/null 2>&1; then return 0; fi
   # `go install` defaults to ~/go/bin, which is NOT on the shell PATH (the shell
   # layer prefixes ~/.local/bin and ~/.cargo/bin). Force GOBIN into ~/.local/bin.
-  local gobin="$HOME/.local/bin"; mkdir -p "$gobin"
-  if command -v go >/dev/null 2>&1; then GOBIN="$gobin" go install "$1" >/dev/null 2>&1 || true
-  elif command -v mise >/dev/null 2>&1; then GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 || true
-  else echo "   $2: needs Go — install later with: GOBIN=$gobin go install $1"; fi
+  local gobin="$HOME/.local/bin"
+  mkdir -p "$gobin" 2>/dev/null || true
+  if command -v go >/dev/null 2>&1; then
+    GOBIN="$gobin" go install "$1" >/dev/null 2>&1 ||
+      echo "   $2: go install failed — retry later: GOBIN=$gobin go install $1"
+  elif command -v mise >/dev/null 2>&1; then
+    GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 ||
+      echo "   $2: go install failed — retry later: GOBIN=$gobin go install $1"
+  else
+    echo "   $2: needs Go — install later with: GOBIN=$gobin go install $1"
+  fi
   return 0
 }
 
@@ -179,7 +187,7 @@ provision() {
     sudo zypper --non-interactive addrepo --refresh --gpgcheck \
       'https://downloads.1password.com/linux/rpm/stable/$basearch' 1password || true
     sudo zypper --non-interactive --gpg-auto-import-keys refresh 1password || true
-    sudo zypper --non-interactive install 1password-cli ||
+    sudo zypper --non-interactive install --no-recommends 1password-cli ||
       echo "   op: install failed — see https://developer.1password.com/docs/cli/get-started/"
   fi
 
