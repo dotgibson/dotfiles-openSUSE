@@ -18,6 +18,23 @@ git-delta      # git pager / diffs (binary: delta)
 btop           # top/htop
 tealdeer       # tldr (binary: tldr). If missing, it's in a devel repo, or: cargo install tealdeer
 
+# ── modern CLI extras (core-doctor set) ───────────────────────
+# MED-confidence names: the live OSS index was unreachable when these were added,
+# so verify on-box with `zypper se -s <name>`. The resilient zypper_install in
+# bootstrap.sh falls back to per-package installs, so a wrong/missing name here is
+# skipped (never aborts the run).
+dust           # du (disk usage)
+duf            # df (disk free)
+procs          # ps
+sd             # sed (find/replace)
+gron           # greppable JSON
+glow           # markdown renderer
+gum            # shell-script UI toolkit
+xh             # HTTPie-like (HTTP client)
+yq             # openSUSE `yq` = mikefarah's Go v4 build (HIGH confidence). `python-yq` is a SEPARATE package.
+# doggo (DNS), carapace (completions), sesh (tmux sessions), op (1Password CLI)
+# are go/vendor tools — installed by bootstrap.sh, not packaged here.
+
 # ── editor + git workflow ─────────────────────────────────────
 neovim
 git              # `git subtree` ships WITH git on openSUSE (no separate package, unlike Fedora)

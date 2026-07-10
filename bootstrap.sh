@@ -90,6 +90,28 @@ zypper_install() {
   done
 }
 
+# Best-effort `go install` for tools not packaged on openSUSE. Presence-guarded
+# (skips if the binary already exists), tolerant of a missing Go toolchain, and
+# never aborts the run.
+_dotfiles_go_install() { # <import-path@version> <binary-name>
+  [ "$#" -ge 2 ] || return 0
+  if command -v "$2" >/dev/null 2>&1; then return 0; fi
+  # `go install` defaults to ~/go/bin, which is NOT on the shell PATH (the shell
+  # layer prefixes ~/.local/bin and ~/.cargo/bin). Force GOBIN into ~/.local/bin.
+  local gobin="$HOME/.local/bin"
+  mkdir -p "$gobin" 2>/dev/null || true
+  if command -v go >/dev/null 2>&1; then
+    GOBIN="$gobin" go install "$1" >/dev/null 2>&1 ||
+      echo "   $2: go install failed — retry later: GOBIN=$gobin go install $1"
+  elif command -v mise >/dev/null 2>&1; then
+    GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 ||
+      echo "   $2: go install failed — retry later: GOBIN=$gobin go install $1"
+  else
+    echo "   $2: needs Go — install later with: GOBIN=$gobin go install $1"
+  fi
+  return 0
+}
+
 provision() {
   blib_say "zypper refresh (metadata)"
   sudo zypper --non-interactive --gpg-auto-import-keys refresh
@@ -146,6 +168,27 @@ provision() {
     blib_say "tree-sitter-cli (cargo)"
     cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
       echo "   tree-sitter-cli build failed; do it later: cargo install tree-sitter-cli (or mise use -g tree-sitter)"
+  fi
+
+  # ── go/vendor tools from the core-doctor set (not packaged on openSUSE) ──────
+  # Each is presence-guarded and best-effort; a missing Go toolchain just logs a
+  # hint. sesh REQUIRES the /v2 module path.
+  blib_say "go tools (doggo, carapace, sesh)"
+  _dotfiles_go_install github.com/mr-karan/doggo/cmd/doggo@latest doggo
+  _dotfiles_go_install github.com/carapace-sh/carapace-bin/cmd/carapace@latest carapace
+  _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh
+
+  # op (1Password CLI) — from 1Password's official signed rpm repo. Guarded on the
+  # binary; every step is `|| true`-tolerant so a repo/network hiccup never aborts.
+  if ! command -v op >/dev/null 2>&1; then
+    blib_say "op (1Password CLI, official signed repo)"
+    sudo rpm --import https://downloads.1password.com/linux/keys/1password.asc || true
+    # NOTE: $basearch stays LITERAL — zypper expands it, so single-quote it here.
+    sudo zypper --non-interactive addrepo --refresh --gpgcheck \
+      'https://downloads.1password.com/linux/rpm/stable/$basearch' 1password || true
+    sudo zypper --non-interactive --gpg-auto-import-keys refresh 1password || true
+    sudo zypper --non-interactive install --no-recommends 1password-cli ||
+      echo "   op: install failed — see https://developer.1password.com/docs/cli/get-started/"
   fi
 
   # ── WSL: install /etc/wsl.conf (systemd + default user + interop) ───────────
