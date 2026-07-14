@@ -173,10 +173,11 @@ provision() {
   # ── go/vendor tools from the core-doctor set (not packaged on openSUSE) ──────
   # Each is presence-guarded and best-effort; a missing Go toolchain just logs a
   # hint. sesh REQUIRES the /v2 module path.
-  blib_say "go tools (doggo, carapace, sesh)"
+  blib_say "go tools (doggo, carapace, sesh, viddy)"
   _dotfiles_go_install github.com/mr-karan/doggo/cmd/doggo@latest doggo
   _dotfiles_go_install github.com/carapace-sh/carapace-bin/cmd/carapace@latest carapace
   _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh
+  _dotfiles_go_install github.com/sachaos/viddy@latest viddy       # watch->viddy (HAVE_VIDDY-guarded)
 
   # op (1Password CLI) — from 1Password's official signed rpm repo. Guarded on the
   # binary; every step is `|| true`-tolerant so a repo/network hiccup never aborts.
