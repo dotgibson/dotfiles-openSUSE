@@ -169,6 +169,12 @@ provision() {
     cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
       echo "   tree-sitter-cli build failed; do it later: cargo install tree-sitter-cli (or mise use -g tree-sitter)"
   fi
+  # viddy (watch replacement; Core aliases watch->viddy, HAVE_VIDDY-guarded) is a Rust
+  # CLI, not in openSUSE repos — build via cargo.
+  if ! command -v viddy >/dev/null && command -v cargo >/dev/null; then
+    blib_say "viddy (cargo — watch replacement)"
+    cargo install --locked viddy >/dev/null 2>&1 || true
+  fi
 
   # ── go/vendor tools from the core-doctor set (not packaged on openSUSE) ──────
   # Each is presence-guarded and best-effort; a missing Go toolchain just logs a
