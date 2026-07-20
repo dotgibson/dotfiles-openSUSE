@@ -155,7 +155,7 @@ provision() {
     blib_say "yazi (cargo)"
     cargo install --locked yazi-fs yazi-cli >/dev/null 2>&1 || true
   fi
-  # mise — polyglot runtime manager; activated in core/zsh/tools.zsh. Runtimes are
+  # mise — polyglot runtime manager; activated in core/zsh/00-tools.zsh. Runtimes are
   # fetched separately with `mise install` (kept out of bootstrap).
   if ! command -v mise >/dev/null && [[ ! -x "$HOME/.local/bin/mise" ]]; then
     blib_say "mise (official installer)"

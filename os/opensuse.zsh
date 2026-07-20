@@ -1,6 +1,6 @@
 # dotfiles-openSUSE/os/opensuse.zsh
 # ──────────────────────────────────────────────────────────────────────────────
-# The openSUSE OS-native shell layer. Symlinked to ~/.config/zsh/os.zsh and
+# The openSUSE OS-native shell layer. Symlinked to ~/.config/zsh/80-os.zsh and
 # loaded AFTER Core (tools/aliases/functions). openSUSE-specific only.
 # Works on Tumbleweed + Leap, Desktop (Wayland/X11) AND WSL.
 #
