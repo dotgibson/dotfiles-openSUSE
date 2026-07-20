@@ -128,7 +128,7 @@ prompt — comes from vendored Core; this repo owns the openSUSE specifics:
 
 - `bootstrap.sh` — `zypper` provision + Core/OS symlink wiring (idempotent)
 - `install/packages.txt` — the `zypper` package list (modern CLI stack)
-- `os/opensuse.zsh` — clipboard + package-manager aliases → `~/.config/zsh/os.zsh`
+- `os/opensuse.zsh` — clipboard + package-manager aliases → `~/.config/zsh/80-os.zsh`
 - `core/` — vendored from `dotfiles-core` (read-only here; edit upstream)
 
 The things that actually bite on openSUSE — the Tumbleweed `dup` vs Leap `up`
