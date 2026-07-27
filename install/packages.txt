@@ -61,6 +61,7 @@ python3-pip
 curl
 wget
 jq
+w3m            # terminal web browser (text-mode; renders tables + inline images)
 htop
 flatpak
 gawk
