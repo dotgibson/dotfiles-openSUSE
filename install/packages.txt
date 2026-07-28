@@ -31,9 +31,11 @@ gron           # greppable JSON
 glow           # markdown renderer
 gum            # shell-script UI toolkit
 xh             # HTTPie-like (HTTP client)
-yq             # openSUSE `yq` = mikefarah's Go v4 build (HIGH confidence). `python-yq` is a SEPARATE package.
-# doggo (DNS), carapace (completions), sesh (tmux sessions), op (1Password CLI)
-# are go/vendor tools — installed by bootstrap.sh, not packaged here.
+# yq, doggo (DNS), carapace (completions), sesh (tmux sessions), op (1Password CLI)
+# are go/vendor tools — installed by bootstrap.sh, not packaged here. yq is the
+# mikefarah Go v4 build: stock `zypper in yq` does NOT reliably provide it — the main
+# OSS `yq` is kislyuk's SEPARATE `python-yq` (a different tool), and mikefarah's Go
+# build only ships from a personal OBS repo — so it's go-installed like doggo/carapace.
 
 # ── editor + git workflow ─────────────────────────────────────
 neovim

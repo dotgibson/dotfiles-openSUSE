@@ -179,7 +179,8 @@ provision() {
   # ── go/vendor tools from the core-doctor set (not packaged on openSUSE) ──────
   # Each is presence-guarded and best-effort; a missing Go toolchain just logs a
   # hint. sesh REQUIRES the /v2 module path.
-  blib_say "go tools (doggo, carapace, sesh)"
+  blib_say "go tools (yq, doggo, carapace, sesh)"
+  _dotfiles_go_install github.com/mikefarah/yq/v4@latest yq
   _dotfiles_go_install github.com/mr-karan/doggo/cmd/doggo@latest doggo
   _dotfiles_go_install github.com/carapace-sh/carapace-bin/cmd/carapace@latest carapace
   _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh
