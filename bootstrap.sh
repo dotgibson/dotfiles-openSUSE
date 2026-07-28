@@ -184,6 +184,27 @@ provision() {
   _dotfiles_go_install github.com/carapace-sh/carapace-bin/cmd/carapace@latest carapace
   _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh
 
+  # yq: mikefarah's Go build (jq-for-YAML). Deliberately NOT via _dotfiles_go_install:
+  # its `command -v yq` guard would be satisfied by kislyuk's python-yq — a DIFFERENT
+  # tool that also ships a `yq` binary — and skip, leaving the wrong yq in place. Guard
+  # instead on our own ~/.local/bin/yq plus the mikefarah signature in `yq --version`,
+  # and install straight into ~/.local/bin (which the shell layer puts ahead of /usr/bin,
+  # so the Go build wins over any distro python-yq). Best-effort; never aborts the run.
+  if [ ! -x "$HOME/.local/bin/yq" ] && ! yq --version 2>/dev/null | grep -qi mikefarah; then
+    local yqbin="$HOME/.local/bin"
+    mkdir -p "$yqbin" 2>/dev/null || true
+    blib_say "yq (mikefarah Go build)"
+    if command -v go >/dev/null 2>&1; then
+      GOBIN="$yqbin" go install github.com/mikefarah/yq/v4@latest >/dev/null 2>&1 ||
+        echo "   yq: go install failed — retry later: GOBIN=$yqbin go install github.com/mikefarah/yq/v4@latest"
+    elif command -v mise >/dev/null 2>&1; then
+      GOBIN="$yqbin" mise exec go@latest -- go install github.com/mikefarah/yq/v4@latest >/dev/null 2>&1 ||
+        echo "   yq: go install failed — retry later: GOBIN=$yqbin go install github.com/mikefarah/yq/v4@latest"
+    else
+      echo "   yq: needs Go — install later with: GOBIN=$yqbin go install github.com/mikefarah/yq/v4@latest"
+    fi
+  fi
+
   # op (1Password CLI) — from 1Password's official signed rpm repo. Guarded on the
   # binary; every step is `|| true`-tolerant so a repo/network hiccup never aborts.
   if ! command -v op >/dev/null 2>&1; then
