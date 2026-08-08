@@ -172,15 +172,18 @@ provision() {
       echo "   tree-sitter-cli build failed; do it later: cargo install tree-sitter-cli (or mise use -g tree-sitter)"
   fi
   # viddy (watch replacement; Core aliases watch->viddy, HAVE_VIDDY-guarded) is a Rust
-  # CLI, not in openSUSE repos — build via cargo.
+  # CLI. Tumbleweed's repo-oss does package it, but we cargo-build for the upstream-latest
+  # version — the guard below skips this if a package already put it on PATH.
   if ! command -v viddy >/dev/null && command -v cargo >/dev/null; then
     blib_say "viddy (cargo — watch replacement)"
     cargo install --locked viddy >/dev/null 2>&1 || true
   fi
 
-  # ── go/vendor tools from the core-doctor set (not packaged on openSUSE) ──────
-  # Each is presence-guarded and best-effort; a missing Go toolchain just logs a
-  # hint. sesh REQUIRES the /v2 module path.
+  # ── go/vendor tools from the core-doctor set ─────────────────────────────────
+  # carapace and sesh are genuinely absent from the openSUSE repos; doggo IS in
+  # Tumbleweed's repo-oss, but is go-installed here for the same upstream-latest
+  # reason as the block above. Each is presence-guarded and best-effort; a missing
+  # Go toolchain just logs a hint. sesh REQUIRES the /v2 module path.
   blib_say "go tools (doggo, carapace, sesh)"
   _dotfiles_go_install github.com/mr-karan/doggo/cmd/doggo@latest doggo
   _dotfiles_go_install github.com/carapace-sh/carapace-bin/cmd/carapace@latest carapace
