@@ -142,7 +142,9 @@ provision() {
     blib_warn "install/packages.txt lists no packages — skipping zypper install"
   fi
 
-  # Tools not reliably packaged on openSUSE — match the other repos via upstream.
+  # Upstream installs, presence-guarded: Tumbleweed packages starship/atuin/yazi/viddy,
+  # but we take the upstream-latest build here to match the other repos. Each check
+  # below short-circuits if the binary is already on PATH, so packaging one is harmless.
   if ! command -v starship >/dev/null; then
     blib_say "starship (official installer)"
     curl -fsSL https://starship.rs/install.sh | sh -s -- -y >/dev/null || true
