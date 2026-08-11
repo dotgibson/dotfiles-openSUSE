@@ -153,9 +153,23 @@ provision() {
     blib_say "atuin (official installer)"
     curl -fsSL https://setup.atuin.sh | sh >/dev/null 2>&1 || true
   fi
-  if ! command -v yazi >/dev/null && command -v cargo >/dev/null; then
-    blib_say "yazi (cargo)"
-    cargo install --locked yazi-fs yazi-cli >/dev/null 2>&1 || true
+  # `yazi-build` is the ONLY crate that installs yazi from crates.io. This block previously
+  # asked for `yazi-fs`, which is a library crate (no [[bin]]) and can never produce the
+  # `yazi` binary the guard tests for — so the guard stayed false forever and every bootstrap
+  # rebuilt the whole yazi workspace (a hundred-plus crates) only to discard it. `yazi-fm` is
+  # not the fix either: yazi-cli's build.rs panics on purpose telling you to use
+  # `cargo install --force yazi-build`. --force is upstream's own instruction. Dropping the
+  # output silencing too: a multi-minute doomed rebuild looked exactly like a hang.
+  # (Matches dotfiles-Fedora/bootstrap.sh, which documents this at length.)
+  #
+  # The guard checks ~/.cargo/bin/yazi as well as PATH, and that second test is what makes
+  # --force safe: `provision` runs BEFORE `wire_links`, so ~/.cargo/bin is not on this shell's
+  # PATH yet (the zsh layer is what prefixes it). On PATH alone, a box that already built yazi
+  # here would fail `command -v` and --force would rebuild it from source on EVERY bootstrap.
+  # Same two-part guard dotfiles-Kali already uses.
+  if ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]] && command -v cargo >/dev/null; then
+    blib_say "yazi (cargo build from source — several minutes, output below)"
+    cargo install --force --locked yazi-build || true
   fi
   # mise — polyglot runtime manager; activated in core/zsh/00-tools.zsh. Runtimes are
   # fetched separately with `mise install` (kept out of bootstrap).
