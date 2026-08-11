@@ -153,9 +153,18 @@ provision() {
     blib_say "atuin (official installer)"
     curl -fsSL https://setup.atuin.sh | sh >/dev/null 2>&1 || true
   fi
+  # `yazi-build` is the ONLY crate that installs yazi from crates.io. This block previously
+  # asked for `yazi-fs`, which is a library crate (no [[bin]]) and can never produce the
+  # `yazi` binary the guard tests for — so the guard stayed false forever and every bootstrap
+  # rebuilt the whole yazi workspace (a hundred-plus crates) only to discard it. `yazi-fm` is
+  # not the fix either: yazi-cli's build.rs panics on purpose telling you to use
+  # `cargo install --force yazi-build`. --force is upstream's own instruction and is harmless
+  # here because the guard already skips the block once `yazi` exists. Dropping the output
+  # silencing too: a multi-minute doomed rebuild looked exactly like a hang.
+  # (Matches dotfiles-Fedora/bootstrap.sh, which documents this at length.)
   if ! command -v yazi >/dev/null && command -v cargo >/dev/null; then
-    blib_say "yazi (cargo)"
-    cargo install --locked yazi-fs yazi-cli >/dev/null 2>&1 || true
+    blib_say "yazi (cargo build from source — several minutes, output below)"
+    cargo install --force --locked yazi-build || true
   fi
   # mise — polyglot runtime manager; activated in core/zsh/00-tools.zsh. Runtimes are
   # fetched separately with `mise install` (kept out of bootstrap).
