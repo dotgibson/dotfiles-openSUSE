@@ -50,7 +50,9 @@ xh             # HTTPie-like (HTTP client)
 #   - go-installed:  yq (mikefarah), doggo (DNS), sesh (tmux)
 #   - upstream rpm:  carapace (completions) — NOT go-installed; `go install` cannot work
 #                    for any version of it (replace directives + uncommitted generated
-#                    sources). See bootstrap.sh's carapace block and core/PORTING-MATRIX.md ²⁷.
+#                    sources). See bootstrap.sh's carapace block, and
+#                    core/PORTING-MATRIX.md's carapace footnote (²⁷ there — it reaches this
+#                    vendored copy with the next Core sync; dotgibson/dotfiles-core#468).
 #   - vendor repo:   op (1Password CLI, from 1Password's signed rpm repo)
 # yq is the mikefarah Go v4 build: stock `zypper in yq` does NOT reliably provide it —
 # the main OSS `yq` is kislyuk's SEPARATE `python-yq` (a different tool), and mikefarah's
