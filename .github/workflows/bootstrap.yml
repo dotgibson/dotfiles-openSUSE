@@ -4,12 +4,43 @@
 # the deps bootstrap needs. See dotfiles-core/.github/workflows/bootstrap-test.yml.
 name: bootstrap
 
+# The filter is the set of inputs that can change this test's OUTCOME.
+#
+# bootstrap.sh / core/** / os/** / ssh/** are exercised today: the reusable's two jobs
+# are `lint` and `links-only`, and blib_link_core wires ssh/config during a links-only
+# run. The self-reference is here on purpose — a change to this caller (image, prep,
+# inputs) must re-run the test it configures.
+#
+# install/** and wsl/** are FORWARD-LOOKING, not currently load-bearing: `--links-only`
+# skips provision(), which is the only place packages.txt and wsl.conf are read, so a
+# change to either cannot fail the test as it stands. They are listed anyway so the
+# filter stays correct by construction once the test grows a real provision leg
+# (dotgibson/dotfiles-core#461) — otherwise adopting that fan-out silently leaves the
+# two inputs it newly covers untriggered. Cost is a few CI minutes on infrequent edits.
+#
+# The two lists are duplicated rather than shared via a YAML anchor: GitHub Actions'
+# workflow parser does not reliably resolve anchors/aliases, and a filter that silently
+# fails to expand would skip the job entirely — the exact failure mode being fixed here.
 on:
   pull_request:
-    paths: ['bootstrap.sh', 'core/**', 'os/**', 'ssh/**', '.github/workflows/bootstrap.yml']
+    paths:
+      - 'bootstrap.sh'
+      - 'core/**'
+      - 'os/**'
+      - 'ssh/**'
+      - 'install/**'
+      - 'wsl/**'
+      - '.github/workflows/bootstrap.yml'
   push:
     branches: [main]
-    paths: ['bootstrap.sh', 'core/**', 'os/**', 'ssh/**', '.github/workflows/bootstrap.yml']
+    paths:
+      - 'bootstrap.sh'
+      - 'core/**'
+      - 'os/**'
+      - 'ssh/**'
+      - 'install/**'
+      - 'wsl/**'
+      - '.github/workflows/bootstrap.yml'
   workflow_dispatch:
 
 permissions:
