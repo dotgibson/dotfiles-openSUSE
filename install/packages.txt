@@ -17,6 +17,13 @@
 # ── shell + multiplexer ───────────────────────────────────────
 zsh
 tmux
+terminfo       # REQUIRED for tmux. openSUSE installs only `terminfo-base` (~45 entries),
+               # which lacks tmux-256color — the TERM Core's tmux.conf sets. Without this
+               # every ncurses program under tmux fails with "unknown terminal type",
+               # `tset` blocks on an interactive "Terminal type?" prompt, and zle
+               # rendering corrupts (typed characters duplicate). NOT `ncurses-term`:
+               # that is the Debian/Fedora name and does not exist on openSUSE.
+               # os/opensuse.conf falls back to screen-256color if this is ever absent.
 
 # ── prompt + history (packaged-first; see POLICY above) ───────
 starship       # prompt. Tumbleweed repo-oss ships it first-class (PORTING-MATRIX fn.18)
