@@ -10,7 +10,10 @@
 # core/ is vendored and is NEVER linted or edited here — it is gated upstream in
 # dotfiles-core by `make audit`, and guarded here by `make check-core`.
 
-SHELL       := /usr/bin/env bash
+# A real executable path: make execs SHELL directly and does NOT word-split it, so
+# `/usr/bin/env bash` would be looked up as a single filename and fail. openSUSE always
+# ships /bin/bash.
+SHELL       := /bin/bash
 CORE_REMOTE ?= https://github.com/dotgibson/dotfiles-core.git
 
 # Repo-owned shell only; core/ is excluded everywhere on purpose.

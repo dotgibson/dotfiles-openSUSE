@@ -251,6 +251,21 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
   return 0
 }
 
+# _render_placeholder <text> <placeholder> <value> — substitute every occurrence of
+# PLACEHOLDER in TEXT with VALUE, treating VALUE as strictly literal.
+#
+# Built from ${var%%…} / ${var#…} only. Those take a PATTERN but have no replacement
+# string, so there is nowhere for &, \ or / to acquire meaning — which is the failure
+# mode every other substitution tool here has (see the caller in the WSL block).
+_render_placeholder() {
+  local text="$1" ph="$2" val="$3" out=""
+  while [[ "$text" == *"$ph"* ]]; do
+    out+="${text%%"$ph"*}$val"
+    text="${text#*"$ph"}"
+  done
+  printf '%s' "$out$text"
+}
+
 provision() {
   blib_say "zypper refresh (metadata)"
   zypper_retry --non-interactive --gpg-auto-import-keys refresh
@@ -420,9 +435,16 @@ provision() {
     blib_say "installing /etc/wsl.conf (systemd + default user)"
     local user rendered backup
     user="$(id -un)"
-    # Render via awk, not `sed s/__WSL_USER__/$user/`: a username containing & or /
-    # would be interpreted as sed replacement syntax and silently corrupt the file.
-    rendered="$(awk -v u="$user" '{gsub(/__WSL_USER__/, u); print}' "$DOTFILES/wsl/wsl.conf")"
+    # Render via _render_placeholder. EVERY obvious approach here is wrong for a
+    # username containing metacharacters, because they all give the REPLACEMENT string
+    # its own syntax:
+    #   sed s/__WSL_USER__/$u/      — & means the match, / ends the expression
+    #   awk gsub(/…/, u)            — & means the match, \ escapes
+    #   ${text//__WSL_USER__/$u}    — bash >= 5.2 also expands & to the match
+    # Verified experimentally; the bash one in particular is a 5.2 behaviour change, so
+    # it is silently version-dependent. _render_placeholder uses only prefix/suffix
+    # removal, which has no replacement syntax at all, so the value is always literal.
+    rendered="$(_render_placeholder "$(<"$DOTFILES/wsl/wsl.conf")" '__WSL_USER__' "$user")"
     # Every other file this bootstrap touches goes through blib_link/blib_seed, which
     # back up first. This path used to `tee` straight over /etc/wsl.conf, destroying
     # any hand-tuned [network]/[boot]/mount settings with no backup and no diff.
