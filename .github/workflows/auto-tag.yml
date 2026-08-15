@@ -1,14 +1,39 @@
 name: auto-tag
 
-# Cut THIS repo's own next vX.Y.Z release tag when a Core fan-out lands new core/ on
+# Cut THIS repo's own next vX.Y.Z release tag when the INSTALLED SURFACE changes on
 # main. Delegates to the reusable workflow in dotfiles-core — one definition of the
 # version math + tagging (scripts/auto-tag.sh): PATCH-bump by default, idempotent (a
 # no-op when HEAD is already tagged vX.Y.Z), and it tags in CI so the second version
 # line (this repo's own tag) stops drifting from the Core it vendors. Pinned @v4.
+#
+# The filter used to be `paths: ['core/**']`, i.e. Core fan-outs only. That silently
+# skipped every change this repo actually owns: PR #88 rewrote bootstrap.sh, added a
+# workflow and four root files across 971 lines and cut NO release, because it touched
+# no core/ path. The version line claimed to be "this repo's own" while tracking only
+# the Core it vendors.
+#
+# The list below is the installed surface — everything whose content ends up on a
+# provisioned machine, and therefore everything a user could want to pin a version to.
+# Kept deliberately in step with bootstrap.yml's filter, plus install/ and wsl/.
+#
+# Docs, CI and repo meta are NOT here on purpose: a README typo or a workflow tweak
+# changes nothing about what bootstrap.sh produces, so it should not consume a version.
+# That means a docs-only or CI-only PR cuts no release — correct, not the old bug.
 on:
   push:
     branches: [main]
-    paths: ['core/**']
+    paths:
+      - 'bootstrap.sh'
+      - 'core/**'
+      - 'os/**'
+      - 'install/**'
+      - 'ssh/**'
+      - 'wsl/**'
+  # Manual trigger, so a release can be cut without inventing a commit to satisfy the
+  # path filter. Needed right now to backfill the tag PR #88 never got, and generally
+  # whenever a release is wanted for work that has already landed. Safe to press: the
+  # reusable is idempotent and no-ops when HEAD already carries a vX.Y.Z tag.
+  workflow_dispatch:
 
 permissions:
   contents: write
