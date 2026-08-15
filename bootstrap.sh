@@ -342,8 +342,12 @@ provision() {
   # enormous saving. Deliberately no cargo fallback: upstream's crates.io story here is a
   # moving target that has now produced two silently-wrong invocations, so an unverified
   # build command must not run automatically. Record it instead and let the operator decide.
+  # The message states the condition actually TESTED, not an inferred cause: the guard
+  # knows only that yazi is not on PATH and not at ~/.cargo/bin/yazi. A yazi installed
+  # somewhere else entirely would trip this, and blaming zypper would then send the
+  # operator down the wrong path.
   if ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]]; then
-    _note_fail "yazi — not installed by zypper on this box; install it manually (upstream: cargo install --locked yazi-fm yazi-cli, which yields 'yazi' + 'ya')"
+    _note_fail "yazi — not on PATH and not at ~/.cargo/bin/yazi. Preferred fix: sudo zypper in yazi (it is packaged, and in install/packages.txt). Upstream alternative: cargo install --locked yazi-fm yazi-cli, which yields 'yazi' + 'ya'"
   fi
   # mise — polyglot runtime manager; activated in core/zsh/00-tools.zsh. Runtimes are
   # fetched separately with `mise install` (kept out of bootstrap). No OSS package
