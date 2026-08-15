@@ -115,8 +115,37 @@ exec zsh
 `core/` is a vendored subtree and is **already present** in a clone — there is no
 submodule step. `bootstrap.sh` is idempotent: it refreshes `zypper` metadata,
 installs the package list, and symlinks Core + the openSUSE layer into place. It
-only refreshes metadata — the `dup`-vs-`up` upgrade choice stays yours. Flags:
-`--links-only` (re-link without touching `zypper`), `--no-flatpak`.
+only refreshes metadata — the `dup`-vs-`up` upgrade choice stays yours.
+
+Not sure what it will touch? Preview the whole plan first — this writes nothing:
+
+```bash
+./bootstrap.sh --dry-run
+```
+
+| Flag | Effect |
+| --- | --- |
+| `--dry-run` | Print every link/seed/backup that would happen; mutate nothing |
+| `--links-only` | Re-wire symlinks without touching `zypper` |
+| `--no-flatpak` | Skip the Flathub remote (already auto-skipped on WSL) |
+| `--only zsh,nvim` | Wire ONLY these Core module groups |
+| `--skip tmux` | Wire everything EXCEPT these groups |
+| `--tolerate-failures` | Exit 0 even if optional tools failed (for CI) |
+
+Module groups: `zsh nvim tmux git prompt tools`. `--only` and `--skip` are mutually
+exclusive and affect wiring only, never package provisioning.
+
+**Exit codes:** `0` success · `1` bad arguments or a failed precondition · `2` the run
+completed but one or more *optional* tools failed to install — the failure ledger is
+printed at the end with a retry command for each, so a lossy install is never silently
+reported as a clean one.
+
+Escalation is via `sudo` by default. On a box with no `sudo`, set `BLIB_SU=""` when
+running as root, or `BLIB_SU=doas`.
+
+> **Windows / `\\wsl.localhost` checkouts:** run `git config core.fileMode false` in
+> your clone. See [CONTRIBUTING.md](CONTRIBUTING.md) — without it, git reports every
+> executable as modified and a commit can strip `+x` from `bootstrap.sh`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -152,7 +181,10 @@ This is an **OS-native layer**, so the contribution rule is a boundary rule:
    it belongs in Core; if it changes with the operator, it belongs in a role repo.
 3. **Green the lint gate.** This repo's CI runs shellcheck + `bash -n` / `zsh -n`
    on the repo-owned shell (the vendored `core/` is excluded — it is gated
-   upstream).
+   upstream). Run `make test` before pushing to get the same answer locally.
+
+Full details, including the Windows checkout caveat and the local gate, are in
+**[CONTRIBUTING.md](CONTRIBUTING.md)**. Security policy: **[SECURITY.md](SECURITY.md)**.
 
 Bugs and ideas: open an
 [issue](https://github.com/dotgibson/dotfiles-openSUSE/issues).

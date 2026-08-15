@@ -8,7 +8,11 @@
 # =========================================================
 Host *
   # Connection multiplexing — reuse existing connections. Big win for repeated
-  # SSH / lab / pentest sessions. bootstrap.sh creates ~/.ssh/sockets (0700).
+  # SSH / lab / pentest sessions.
+  # ~/.ssh/sockets (0700) is created by Core's blib_link_core, which bootstrap.sh
+  # calls — but only when the `tools` module group is selected. `./bootstrap.sh
+  # --only zsh` skips it, and ControlMaster then fails on a missing socket dir;
+  # re-run without --only (or with --only tools) to create it.
   ControlMaster auto
   ControlPath ~/.ssh/sockets/%r@%h:%p
   ControlPersist 10m
