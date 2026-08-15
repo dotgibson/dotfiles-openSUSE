@@ -1,0 +1,21 @@
+# .shellcheckrc — ShellCheck config for the repo-owned shell in this OS layer.
+# ──────────────────────────────────────────────────────────────────────────────
+# core/.shellcheckrc exists, but ShellCheck resolves this file by searching from the
+# CHECKED FILE's directory upward — so the vendored copy governs core/** and nothing
+# else. bootstrap.sh sits at the root, where there was no config at all: it was linted
+# with ShellCheck's defaults while Core's scripts were linted with the settings below,
+# and an editor (bashls / nvim) opening bootstrap.sh disagreed with CI.
+#
+# Mirrors core/.shellcheckrc so author-time, CI, and editor all agree everywhere.
+
+# Follow `source`-d files so `-x` works from any working directory, and resolve a
+# sourced path relative to the script being checked. This is what makes bootstrap.sh's
+# `source "$DOTFILES/core/lib/bootstrap-lib.sh"` resolvable — without it, ShellCheck
+# cannot see the blib_* definitions and reports every call as SC2154/SC2148 noise.
+external-sources=true
+source-path=SCRIPTDIR
+
+# Lint as bash: bootstrap.sh is `#!/usr/bin/env bash` and relies on bash-only features
+# (mapfile, arrays, [[ ]], arithmetic contexts). The zsh files in os/ are NOT checked by
+# ShellCheck — it has no zsh mode — they get `zsh -n` via `make lint` instead.
+shell=bash

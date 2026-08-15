@@ -1,0 +1,47 @@
+# .editorconfig — house style for dotfiles-openSUSE (the OS-native layer).
+# https://editorconfig.org — honored natively by Neovim (this repo's editor), VS Code,
+# and most others. Mirrors core/.editorconfig so a file edited here and the same class
+# of file edited upstream in dotfiles-core come out identically.
+#
+# NB: `end_of_line = lf` here guides EDITORS only; it does not govern what git writes.
+# .gitattributes is what makes LF a hard guarantee at the git layer — both are needed,
+# and the .gitattributes one is the load-bearing half on a Windows checkout.
+#
+# shfmt is deliberately NOT enforced (it would expand the compact one-liner style used
+# in bootstrap.sh's arg loop, matching Core's decision); the enforced checks are
+# shellcheck + `zsh -n` + actionlint via `make lint`.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Shell — 2-space (shfmt intentionally not enforced; this just keeps edits consistent).
+[*.{sh,zsh}]
+indent_size = 2
+
+[*.{toml,yml,yaml,json,jsonc}]
+indent_size = 2
+
+# Markdown: trailing whitespace can be a meaningful hard line break.
+[*.md]
+trim_trailing_whitespace = false
+
+# tmux / git / ssh configs follow upstream conventions.
+[*.{conf,gitconfig}]
+indent_size = 2
+
+[ssh/config]
+indent_size = 2
+
+# packages.txt is a plain list with aligned trailing comments — leave alignment alone.
+[install/packages.txt]
+trim_trailing_whitespace = false
+
+# Makefile — recipe lines REQUIRE real tabs; override the global space rule.
+[Makefile]
+indent_style = tab

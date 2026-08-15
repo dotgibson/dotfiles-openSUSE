@@ -1,0 +1,88 @@
+# .pre-commit-config.yaml — author-time guardrails for dotfiles-openSUSE.
+#
+#   one-time:  pip install pre-commit && pre-commit install
+#   manual:    pre-commit run --all-files
+#
+# core/.pre-commit-config.yaml exists but is inert here: pre-commit only reads the
+# config at the repo ROOT, so until this file existed nothing ran at commit time —
+# and in particular NOTHING scanned this repo for secrets. The CI lint gate
+# (.github/workflows/lint.yml) calls Core's reusable shellcheck/actionlint workflow
+# only; gitleaks lives in core/'s own pre-commit + audit, which run against
+# dotfiles-core, never against bootstrap.sh / os/ / install/ / ssh/ / wsl/.
+#
+# Hook revs are pinned and deliberately kept in step with core/.pre-commit-config.yaml
+# so the two layers report identically.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$|^install/packages\.txt$'
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+      - id: check-executables-have-shebangs
+      # The exec-bit regression this repo is especially exposed to: edited over an SMB
+      # mount (\\wsl.localhost\...), a rewritten bootstrap.sh loses +x silently. If that
+      # ever reaches the index, the documented `./bootstrap.sh` stops working on a fresh
+      # clone. (core.fileMode=false keeps the INDEX mode correct — see CONTRIBUTING.md —
+      # this is the second line of defence.)
+      - id: check-shebang-scripts-are-executable
+
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.11.0
+    hooks:
+      - id: shellcheck
+        args: ["-x"]
+        # zsh has no ShellCheck mode; os/*.zsh is covered by `zsh -n` in `make lint`.
+        files: '\.sh$'
+        exclude: '^core/'
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.23.2
+    hooks:
+      - id: markdownlint-cli2
+        exclude: '^core/'
+
+  # Secret scanning. This repo tracks ssh/config, ships 1Password helpers, and is
+  # PUBLIC — a key or token committed here is exposed immediately. GitHub's push
+  # protection catches provider-pattern tokens server-side, but not a private key
+  # pasted into ssh/config; gitleaks catches it before the commit exists at all.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+        exclude: '^core/'
+
+  # The vendoring contract, enforced locally instead of only at PR time.
+  # core/ is a git subtree of dotgibson/dotfiles-core; anything edited here is
+  # overwritten by the next `make sync` upstream, and the core-integrity workflow
+  # will fail the PR.
+  #
+  # Deliberately inspects the STAGED set via git rather than using `language: fail`
+  # with `files: '^core/'`: pre-commit passes every tracked file in
+  # `pre-commit run --all-files`, so a files-matching hook would fail unconditionally
+  # on a clean tree (core/ always exists). Checking `git diff --cached` is correct in
+  # both flows — it fires on a real commit and is a no-op for --all-files.
+  #
+  # Legitimate core/ changes come from `git subtree pull`, which this hook WILL also
+  # block; that is intended — run those with `git commit --no-verify`, or via the
+  # upstream sync-core.sh fan-out that produces the sync/core-vX.Y.Z PRs.
+  - repo: local
+    hooks:
+      - id: no-core-edits
+        name: refuse hand-edits to the vendored core/ subtree
+        entry: |
+          bash -c '
+          staged=$(git diff --cached --name-only --diff-filter=ACMR -- core/)
+          [ -z "$staged" ] && exit 0
+          echo "core/ is vendored from dotgibson/dotfiles-core and must not be hand-edited:" >&2
+          echo "$staged" | sed "s/^/  /" >&2
+          echo "Fix it upstream, run '\''make audit'\'' there, then '\''make sync'\''." >&2
+          echo "For a legitimate subtree pull, bypass with: git commit --no-verify" >&2
+          exit 1' --
+        language: system
+        pass_filenames: false
+        always_run: true

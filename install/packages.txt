@@ -1,14 +1,26 @@
 # dotfiles-openSUSE/install/packages.txt
 # zypper package names for the modern terminal stack. One per line; # comments ok.
-# Installed by bootstrap.sh instead of listed here — keep them OUT: starship, atuin,
-# yazi, viddy (upstream installer / cargo, each presence-guarded, so a packaged binary
-# just short-circuits the install). Tumbleweed's repo-oss now ships those four
-# first-class; they stay out to keep the upstream-latest build, not for lack of a
-# package. tree-sitter-cli is the one that really isn't packaged — cargo only.
+#
+# POLICY (changed): packaged-first. Anything openSUSE ships is listed HERE and comes
+# from the signed repo. bootstrap.sh's `command -v` guards then short-circuit, so its
+# upstream installers only ever run as a FALLBACK — on Leap, or where a package was
+# genuinely unavailable. This keeps three unpinned `curl | sh` remote executions
+# (starship, atuin, mise) off the happy path.
+#
+# Still NOT listed here, deliberately:
+#   - yazi, viddy  — cargo builds for the upstream-latest version. crates.io with
+#                    --locked is a different risk profile from piping a URL to sh,
+#                    and both are presence-guarded, so packaging one is harmless.
+#   - mise         — no OSS package exists; mise.run stays its primary path.
+#   - tree-sitter-cli — genuinely unpackaged; cargo only.
 
 # ── shell + multiplexer ───────────────────────────────────────
 zsh
 tmux
+
+# ── prompt + history (packaged-first; see POLICY above) ───────
+starship       # prompt. Tumbleweed repo-oss ships it first-class (PORTING-MATRIX fn.18)
+atuin          # shell history. Ditto. Older Leap may lack it -> installer fallback
 
 # ── modern CLI core ───────────────────────────────────────────
 eza            # ls

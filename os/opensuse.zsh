@@ -99,7 +99,18 @@ unset _IS_WSL
 
 # ── auto-start/attach tmux for interactive terminals ─────────────────────────
 # Skip inside an existing tmux, VS Code's integrated terminal, and non-TTYs.
-if command -v tmux >/dev/null 2>&1 \
-   && [[ -z "$TMUX" && -t 1 && "$TERM_PROGRAM" != "vscode" ]]; then
+#
+# Escape hatch: export DOTFILES_NO_AUTOTMUX=1 to disable entirely. There was no opt-out
+# before, which made this awkward in any interactive context where an unexpected tmux
+# is wrong — a CI/container shell, a `zsh -i` from an editor or test harness, or a
+# remote session where you want the bare shell.
+#
+# Set it in ~/.zshenv, or in the environment for a single session. NOT in
+# ~/.config/zsh/99-local.zsh: the loader sources fragments in NN order, so this file
+# (band 80) has already run by the time band 99 is read — the flag would be set too
+# late to suppress anything.
+if [[ -z "${DOTFILES_NO_AUTOTMUX:-}" ]] \
+   && command -v tmux >/dev/null 2>&1 \
+   && [[ -z "${TMUX:-}" && -t 1 && "${TERM_PROGRAM:-}" != "vscode" ]]; then
   tmux attach -t main 2>/dev/null || tmux new-session -s main
 fi
