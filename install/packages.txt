@@ -8,9 +8,9 @@
 # (starship, atuin, mise) off the happy path.
 #
 # Still NOT listed here, deliberately:
-#   - yazi, viddy  — cargo builds for the upstream-latest version. crates.io with
-#                    --locked is a different risk profile from piping a URL to sh,
-#                    and both are presence-guarded, so packaging one is harmless.
+#   - viddy        — cargo build for the upstream-latest version. crates.io with --locked
+#                    is a different risk profile from piping a URL to sh, and it is
+#                    presence-guarded, so packaging it would be harmless too.
 #   - mise         — no OSS package exists; mise.run stays its primary path.
 #   - tree-sitter-cli — genuinely unpackaged; cargo only.
 
@@ -39,6 +39,12 @@ fzf            # fuzzy finder
 git-delta      # git pager / diffs (binary: delta)
 btop           # top/htop
 tealdeer       # tldr (binary: tldr). Tumbleweed + Leap 15.6 OSS; older Leap: cargo install tealdeer
+yazi           # terminal file manager (Core aliases y/fm, sets HAVE_YAZI).
+               # Packaged deliberately. The old `cargo install --locked yazi-build`
+               # installed the workspace's xtask build-runner (its only bin is named
+               # `yazi-build`), never the `yazi` binary — so it rebuilt 100+ crates on
+               # every run, produced no yazi, and still exited 0. Full autopsy is in
+               # the corresponding bootstrap.sh block.
 
 # ── modern CLI extras (core-doctor set) ───────────────────────
 # All eight verified against the openSUSE OSS index (2026-08-08, #83) — each resolves
