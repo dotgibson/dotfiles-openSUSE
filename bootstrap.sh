@@ -369,15 +369,79 @@ provision() {
   fi
 
   # ── go/vendor tools from the core-doctor set ─────────────────────────────────
-  # carapace and sesh are genuinely absent from the openSUSE repos; doggo IS in
-  # Tumbleweed's repo-oss, but is go-installed here for the same upstream-latest
-  # reason as the block above. Each is presence-guarded and best-effort; a missing
-  # Go toolchain is now recorded in the ledger rather than only echoed. sesh REQUIRES
-  # the /v2 module path.
-  blib_say "go tools (doggo, carapace, sesh)"
+  # sesh is genuinely absent from the openSUSE repos; doggo IS in Tumbleweed's
+  # repo-oss, but is go-installed here for the same upstream-latest reason as the
+  # block above. Each is presence-guarded and best-effort; a missing Go toolchain is
+  # now recorded in the ledger rather than only echoed. sesh REQUIRES the /v2 module
+  # path. carapace used to be in this list and CANNOT be — see the block below.
+  blib_say "go tools (doggo, sesh)"
   _dotfiles_go_install github.com/mr-karan/doggo/cmd/doggo@latest doggo
-  _dotfiles_go_install github.com/carapace-sh/carapace-bin/cmd/carapace@latest carapace
   _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh
+
+  # carapace: upstream's official RPM, NOT `go install`.
+  #
+  # `go install github.com/carapace-sh/carapace-bin/cmd/carapace@latest` cannot work, and
+  # not for any version — two independent blockers, both properties of how the module is
+  # built rather than a break to wait out (core/PORTING-MATRIX.md ²⁷ carries the full
+  # story and the evidence):
+  #   1. Its go.mod carries `replace` directives (spf13/pflag → carapace-pflag,
+  #      kevinburke/ssh_config → carapace-sh/ssh_config), and `go install pkg@version`
+  #      refuses any module that does, because a replace would make the build differ from
+  #      building it as the main module.
+  #   2. The generated sources (pkg/{actions,conditions}/*_generated.go) are not committed;
+  #      cmd/carapace/main.go's `go:generate` lines produce them. So even a plain
+  #      `go build` on a clone fails until generation has run.
+  # Checked across the whole tag history: 184 of 184 tags (v0.0.3 2020-08-31 → v1.7.3
+  # 2026-06-30) carry a `replace`, and 0 commit the generated sources. So pinning an older
+  # @version does NOT help — that is the tempting next move, and it fails identically.
+  # The old call therefore failed on EVERY bootstrap, invisibly: _dotfiles_go_install sends
+  # the explanation to /dev/null and downgrades the failure to a ledger note, so the run
+  # just never produced a carapace and nobody saw why.
+  #
+  # Upstream publishes an official .rpm per release, which lands in /usr/bin. Two flags are
+  # needed and they are not the same flag: upstream signs nothing (there is no `signs:`
+  # stanza in its .goreleaser.yml), so `--no-gpg-checks` covers the GPG check failure and
+  # `--allow-unsigned-rpm` covers the specific "plain rpm given on the command line is
+  # unsigned" refusal. Without them `zypper -n` simply aborts. dnf4 needs neither, which is
+  # why dotfiles-Fedora's otherwise-identical block looks simpler than this one.
+  #
+  # Be exact about what this does and does not buy: installing from a release URL does NOT
+  # add a repo, so NOTHING upgrades carapace afterwards. Not `zypper dup`, not `up`, not
+  # maint, and not a later bootstrap either — the `command -v carapace` guard below skips
+  # the whole block once the binary exists. Upstream ships no zypper repo and openSUSE does
+  # not package it, so there is no upgrade source to point at; updating is a deliberate
+  # manual step, and `carapace --version` is how you would know you are behind. That is the
+  # real cost, and it is still the right route: `go install` cannot work at all, so the
+  # choice is a manually-updated binary or no carapace.
+  #
+  # Resolve the newest asset for THIS arch with grep/cut (no jq dependency) rather than
+  # pinning a version that would rot. Mirrors dotfiles-Fedora/bootstrap.sh — port fixes both
+  # ways. A future change wanting a real trust anchor would pin the version and verify a
+  # SHA-256 recorded in THIS tree (the scripts/tool-versions.env shape); upstream's own
+  # checksums.txt is unsigned and same-origin, so it catches corruption, not compromise.
+  if ! command -v carapace >/dev/null; then
+    blib_say "carapace (upstream RPM — go install is impossible, see above)"
+    local _cara_arch=""
+    case "$(uname -m)" in
+    x86_64) _cara_arch=amd64 ;;
+    aarch64) _cara_arch=arm64 ;;
+    esac
+    if [[ -z "$_cara_arch" ]]; then
+      _note_fail "carapace: no upstream RPM for $(uname -m) — skipping; see github.com/carapace-sh/carapace-bin/releases"
+    else
+      local _cara_url=""
+      _cara_url="$(curl -fsSL --max-time 30 \
+        https://api.github.com/repos/carapace-sh/carapace-bin/releases/latest 2>/dev/null |
+        grep -o "\"browser_download_url\": *\"[^\"]*linux_${_cara_arch}\.rpm\"" |
+        cut -d'"' -f4 | head -1)" || true
+      if [[ -n "$_cara_url" ]]; then
+        _priv zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$_cara_url" >/dev/null ||
+          _note_fail "carapace: RPM install failed — retry later: ${BLIB_SU-sudo} zypper -n --no-gpg-checks install --allow-unsigned-rpm $_cara_url"
+      else
+        _note_fail "carapace: could not resolve the latest linux_${_cara_arch} RPM (offline? API rate-limited?) — see github.com/carapace-sh/carapace-bin/releases"
+      fi
+    fi
+  fi
 
   # yq: mikefarah's Go build (jq-for-YAML). Deliberately NOT via _dotfiles_go_install:
   # its `command -v yq` guard would be satisfied by kislyuk's python-yq — a DIFFERENT
