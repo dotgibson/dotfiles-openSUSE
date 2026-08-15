@@ -154,7 +154,11 @@ _priv_preflight() {
     # Prime the credential cache once up front. The cargo builds below can take many
     # minutes, and a sudo timestamp expiring mid-run turns an unattended provision
     # into one silently blocked on a password prompt.
-    [[ "$su" == sudo ]] && sudo -v 2>/dev/null || true
+    # Written as an explicit `if` rather than `[[ … ]] && sudo -v || true`: that form is
+    # the SC2015 A&&B||C antipattern, where C also runs when A is true.
+    if [[ "$su" == sudo ]]; then
+      sudo -v 2>/dev/null || true
+    fi
     return 0
   fi
   if ((EUID == 0)); then
@@ -395,7 +399,11 @@ provision() {
     if ! _priv rpm --import https://downloads.1password.com/linux/keys/1password.asc; then
       _note_fail "op — 1Password signing key import failed; repo NOT added (refusing to trust an unverified key). See https://developer.1password.com/docs/cli/get-started/"
     else
-      # NOTE: $basearch stays LITERAL — zypper expands it, so single-quote it here.
+      # NOTE: $basearch stays LITERAL — zypper expands it itself, so it MUST be
+      # single-quoted here. Suppression is inline rather than in .shellcheckrc because
+      # it is a fact about this one line, not a global truth (Core's CONTRIBUTING.md
+      # makes the same call for its intentional SC2016s).
+      # shellcheck disable=SC2016
       _priv zypper --non-interactive addrepo --refresh --gpgcheck \
         'https://downloads.1password.com/linux/rpm/stable/$basearch' 1password || true
       if zypper_retry --non-interactive refresh 1password; then
