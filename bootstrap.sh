@@ -448,7 +448,11 @@ provision() {
     # Every other file this bootstrap touches goes through blib_link/blib_seed, which
     # back up first. This path used to `tee` straight over /etc/wsl.conf, destroying
     # any hand-tuned [network]/[boot]/mount settings with no backup and no diff.
-    if [[ -f /etc/wsl.conf ]] && ! printf '%s\n' "$rendered" | diff -q - /etc/wsl.conf >/dev/null 2>&1; then
+    # Compared in pure bash rather than with diff/cmp: those come from diffutils, which
+    # is NOT in install/packages.txt and is absent from minimal openSUSE images (the
+    # exact fresh-machine case this path exists for). Both sides go through $(<…), which
+    # strips trailing newlines identically, so the comparison is apples-to-apples.
+    if [[ -f /etc/wsl.conf ]] && [[ "$(</etc/wsl.conf)" != "$rendered" ]]; then
       backup="/etc/wsl.conf.pre-dotfiles.$(date +%Y%m%d%H%M%S)"
       blib_warn "existing /etc/wsl.conf differs — backing up to $backup"
       _priv cp -a /etc/wsl.conf "$backup"
