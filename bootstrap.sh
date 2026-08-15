@@ -324,24 +324,26 @@ provision() {
     curl -fsSL https://setup.atuin.sh | sh >/dev/null ||
       _note_fail "atuin — installer failed; retry: curl -fsSL https://setup.atuin.sh | sh"
   fi
-  # `yazi-build` is the ONLY crate that installs yazi from crates.io. This block previously
-  # asked for `yazi-fs`, which is a library crate (no [[bin]]) and can never produce the
-  # `yazi` binary the guard tests for — so the guard stayed false forever and every bootstrap
-  # rebuilt the whole yazi workspace (a hundred-plus crates) only to discard it. `yazi-fm` is
-  # not the fix either: yazi-cli's build.rs panics on purpose telling you to use
-  # `cargo install --force yazi-build`. --force is upstream's own instruction. Dropping the
-  # output silencing too: a multi-minute doomed rebuild looked exactly like a hang.
-  # (Matches dotfiles-Fedora/bootstrap.sh, which documents this at length.)
+  # yazi is PACKAGED (install/packages.txt) — the cargo path that used to live here was
+  # broken in a way that hid itself for as long as it existed.
   #
-  # The guard checks ~/.cargo/bin/yazi as well as PATH, and that second test is what makes
-  # --force safe: `provision` runs BEFORE `wire_links`, so ~/.cargo/bin is not on this shell's
-  # PATH yet (the zsh layer is what prefixes it). On PATH alone, a box that already built yazi
-  # here would fail `command -v` and --force would rebuild it from source on EVERY bootstrap.
-  # Same two-part guard dotfiles-Kali already uses.
-  if ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]] && command -v cargo >/dev/null; then
-    blib_say "yazi (cargo build from source — several minutes, output below)"
-    cargo install --force --locked yazi-build ||
-      _note_fail "yazi — cargo build failed; retry: cargo install --force --locked yazi-build"
+  # `cargo install --locked yazi-build` SUCCEEDS, so it never tripped the failure ledger,
+  # but yazi-build is not the file manager: it is the workspace's xtask build-task runner,
+  # and the only binary it ships is literally named `yazi-build`
+  # (`cargo install` records bins:["yazi-build"]; running it prints "Yazi build tasks —
+  # Usage: cargo xtask build|dist|install"). So `command -v yazi` and `-x ~/.cargo/bin/yazi`
+  # were both false forever, exactly as they had been for the earlier `yazi-fs` attempt the
+  # old comment here described — every bootstrap rebuilt a hundred-plus crates, produced no
+  # `yazi` command, and exited 0 reporting success. Verified on a live box: ~/.cargo/bin held
+  # `yazi-build` and no `yazi`.
+  #
+  # openSUSE packages yazi first-class (Tumbleweed OSS 26.5.6 vs crates.io 26.8.15), so
+  # packaged-first — the policy already used for starship/atuin — is both correct and an
+  # enormous saving. Deliberately no cargo fallback: upstream's crates.io story here is a
+  # moving target that has now produced two silently-wrong invocations, so an unverified
+  # build command must not run automatically. Record it instead and let the operator decide.
+  if ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]]; then
+    _note_fail "yazi — not installed by zypper on this box; install it manually (upstream: cargo install --locked yazi-fm yazi-cli, which yields 'yazi' + 'ya')"
   fi
   # mise — polyglot runtime manager; activated in core/zsh/00-tools.zsh. Runtimes are
   # fetched separately with `mise install` (kept out of bootstrap). No OSS package
