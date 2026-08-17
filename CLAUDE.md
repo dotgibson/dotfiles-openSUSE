@@ -6,7 +6,7 @@ rules (the load order, the "is it Core?" test, the manifest contract) see
 
 ## What this repo is
 
-`dotfiles-openSUSE` is the **OS-native layer for openSUSE** in a **eleven-repo dotfiles system** built on a three-layer
+`dotfiles-openSUSE` is the **OS-native layer for openSUSE** in an **eleven-repo dotfiles system** built on a three-layer
 model (Core → OS-native → Role). Stamped from the Fedora template (see `core/PORTING-MATRIX.md`). Two flavors with **different update commands** — Tumbleweed (rolling) uses `zypper dup`, Leap (stable) uses `zypper up`. Get this wrong and you half-update. Add the Packman repo for codecs.
 
 ## The rule that bites
