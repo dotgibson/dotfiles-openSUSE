@@ -34,7 +34,7 @@ Only what changes with the OS:
 | `ssh/config`, `wsl/wsl.conf` | client SSH config; WSL systemd/user config |
 
 If it would be identical on every distro it belongs in Core. If it changes with the
-operator rather than the OS, it belongs in a role repo (`dotfiles-Kali`,
+operator rather than the OS, it belongs in a role repo (`dotfiles-Offense`,
 `dotfiles-Defense`).
 
 ## Before you push
