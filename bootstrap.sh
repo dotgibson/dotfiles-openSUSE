@@ -374,6 +374,19 @@ provision() {
       _note_fail "viddy — cargo build failed; retry: cargo install --locked viddy"
   fi
 
+  # tealdeer (the `tldr` client) — PACKAGED on Tumbleweed (install/packages.txt), but gone
+  # from Leap 16.0/16.1's primary repos; there it ships only in the `utilities` OBS repo,
+  # which bootstrap deliberately does not add (same call as Packman — see provision's
+  # header). So cargo is the automatic Leap path. Guard on `tldr`, NOT on `tealdeer`:
+  # the crate is `tealdeer` and the binary it installs is `tldr`, and a guard naming the
+  # wrong one is exactly the failure the yazi block above autopsies — it would never be
+  # satisfied, so a packaged tldr would get rebuilt from source on every single run.
+  if ! command -v tldr >/dev/null && command -v cargo >/dev/null; then
+    blib_say "tealdeer (cargo — tldr; not in Leap's primary repos)"
+    cargo install --locked tealdeer >/dev/null 2>&1 ||
+      _note_fail "tealdeer — cargo build failed; retry: cargo install --locked tealdeer (on Leap you can instead add the utilities OBS repo: zypper ar https://download.opensuse.org/repositories/utilities/16.0/ utilities)"
+  fi
+
   # ── go/vendor tools from the core-doctor set ─────────────────────────────────
   # sesh is genuinely absent from the openSUSE repos; doggo IS in Tumbleweed's
   # repo-oss, but is go-installed here for the same upstream-latest reason as the
