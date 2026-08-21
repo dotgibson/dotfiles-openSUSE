@@ -1,43 +1,34 @@
-# dotfiles-openSUSE/.gitattributes — line-ending policy for the OS-native layer.
+# .gitattributes — line-ending policy for dotfiles-core.
 # ──────────────────────────────────────────────────────────────────────────────
-# core/ ships its own .gitattributes, but git only applies a .gitattributes to the
-# directory tree BELOW it — so the vendored copy governs core/** and nothing else.
-# Every repo-owned path (bootstrap.sh, os/, install/, ssh/, wsl/, .github/) was
-# unprotected until this file existed.
-#
-# Why this matters more here than in most repos: this tree is routinely checked out
-# on Windows (\\wsl.localhost\...), where `core.autocrlf=true` is the default and is
-# set GLOBALLY on at least one machine that edits it. If bootstrap.sh ever lands on
-# disk with CRLF, its shebang becomes `…/env bash\r` and every fresh install dies with
-# "bad interpreter: No such file or directory" — and CI would not catch it, because
-# the lint runner checks out a normalized copy on Linux.
+# .editorconfig sets `end_of_line = lf`, but that only guides EDITORS — it does
+# not govern what git writes on checkout/commit. Core is vendored (git subtree)
+# into the OS repos, and may itself be edited on Windows, where git can introduce
+# CRLF. If a `.sh`, `bin/clip`, or `bin/clip-paste` lands on disk with CRLF, its
+# shebang becomes `…/env bash\r` and the interpreter dies with "bad interpreter:
+# No such file or directory" — a class of breakage the manifest/exec-bit/shellcheck
+# audit cannot see (the file is valid text). This makes LF a hard guarantee at the
+# git layer, for every consumer.
 #
 # `text=auto eol=lf`: git auto-detects text vs binary, normalizes text to LF in the
-# index, and checks it out as LF on every OS. The explicit blocks below pin the
-# load-bearing classes so detection is never in play for them.
-# Mirrors core/.gitattributes so vendored and repo-owned paths behave identically.
-
+# repo, and checks it out as LF on every OS (including Windows). The explicit blocks
+# below pin the load-bearing executable/config classes so detection is never in
+# play for them. Binaries are marked so git never touches their bytes.
 # Default: normalize all detected-text files to LF in the index and on checkout.
 * text=auto eol=lf
-
 # ── Executable + sourced shell — MUST stay LF or the shebang/sourcing breaks ───
 *.sh        text eol=lf
 *.zsh       text eol=lf
-
-# ── Config / data this layer owns ─────────────────────────────────────────────
-*.conf      text eol=lf
-*.gitconfig text eol=lf
+bin/clip    text eol=lf
+bin/clip-paste text eol=lf
+# ── Config / data that fans out to every OS repo ──────────────────────────────
+*.lua       text eol=lf
 *.toml      text eol=lf
 *.yml       text eol=lf
 *.yaml      text eol=lf
-*.jsonc     text eol=lf
-*.json      text eol=lf
+*.conf      text eol=lf
+*.gitconfig text eol=lf
 *.md        text eol=lf
-*.txt       text eol=lf
 Makefile    text eol=lf
-ssh/config  text eol=lf
-wsl/wsl.conf text eol=lf
-
 # ── Binaries (defensive): never normalize, never diff as text ─────────────────
 *.png       binary
 *.jpg       binary
@@ -47,13 +38,3 @@ wsl/wsl.conf text eol=lf
 *.pdf       binary
 *.gz        binary
 *.zip       binary
-
-# ── Vendored Core: keep it out of this repo's language stats ──────────────────
-# core/ is a git subtree of dotgibson/dotfiles-core and is never hand-edited here
-# (see CONTRIBUTING.md + the core-integrity CI gate). linguist-vendored stops GitHub
-# reporting Core's Lua/zsh as this repo's own code.
-#
-# Deliberately NOT marked `-diff`: suppressing core/ diffs would also hide a hand-edit
-# during review, which is precisely the thing the vendoring contract exists to catch.
-# core/ line endings are governed by core/.gitattributes, which applies to its subtree.
-core/** linguist-vendored
