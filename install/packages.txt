@@ -13,6 +13,13 @@
 #                    presence-guarded, so packaging it would be harmless too.
 #   - mise         — no OSS package exists; mise.run stays its primary path.
 #   - tree-sitter-cli — genuinely unpackaged; cargo only.
+#
+# Listed here but flavor-dependent — the one entry that is neither purely packaged
+# nor purely bootstrap-installed:
+#   - tealdeer     — packaged on Tumbleweed, absent from Leap 16.x's primary repos. It
+#                    stays in the list so Tumbleweed takes the signed-repo path; on Leap
+#                    zypper skips the name and bootstrap.sh's presence-guarded
+#                    `cargo install --locked tealdeer` supplies `tldr`. See its entry below.
 
 # ── shell + multiplexer ───────────────────────────────────────
 zsh
@@ -38,7 +45,11 @@ zoxide         # cd
 fzf            # fuzzy finder
 git-delta      # git pager / diffs (binary: delta)
 btop           # top/htop
-tealdeer       # tldr (binary: tldr). Tumbleweed + Leap 15.6 OSS; older Leap: cargo install tealdeer
+tealdeer       # tldr (binary: tldr). Tumbleweed repo-oss only. NOT in Leap 16.0/16.1's
+               # primary repos — it shipped in 15.6, which is EOL. On Leap it lives in the
+               # `utilities` OBS repo (download.opensuse.org/repositories/utilities/16.0/),
+               # deliberately NOT auto-added — same call as Packman. So on Leap the zypper
+               # pass skips this name and bootstrap.sh cargo-builds the crate instead.
 yazi           # terminal file manager (Core aliases y/fm, sets HAVE_YAZI).
                # Packaged deliberately. The old `cargo install --locked yazi-build`
                # installed the workspace's xtask build-runner (its only bin is named
@@ -85,11 +96,19 @@ xclip          # X11 fallback (sessions / SSH X-forward)
 gcc
 gcc-c++        # some tree-sitter parsers ship C++ scanners
 make
-cargo          # rust toolchain -> builds yazi + tree-sitter-cli
+cargo          # rust toolchain -> builds tree-sitter-cli, viddy, and (on Leap) tealdeer.
+               # NOT yazi: that is packaged now — see the yazi entry above.
 
-# ── Neovim provider deps (fix :checkhealth) ───────────────────
-python3-neovim # pynvim — the Python 3 provider module
-python3-pip
+# ── python tooling ────────────────────────────────────────────
+# `python3-neovim` (pynvim) used to sit here under a "fix :checkhealth" heading, and it had
+# that exactly backwards. Core DISABLES the python3 provider outright
+# (`vim.g.loaded_python3_provider = 0`, core/nvim/lua/gerrrt/config/providers.lua) because
+# nothing in the config reaches py3eval — and that disable is precisely what makes the tree
+# portable to a box without pynvim. So the package installed a module nothing imports. It is
+# also absent from Leap 16.x entirely, which is how it surfaced (#89). Removed.
+python3-pip    # kept — pre-commit (CONTRIBUTING.md), `pip install ty`, ad-hoc tooling.
+               # Note the system interpreter is PEP 668 externally-managed: a user-site
+               # install needs --break-system-packages or a venv.
 # rust-analyzer  # uncomment if you use the Rust LSP (rustaceanvim wants it)
 # go             # uncomment for the Go LSP (gopls) + Go tooling
 
