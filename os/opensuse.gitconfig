@@ -18,3 +18,25 @@
 	#   • WSL + Git for Windows installed (shares credentials with Windows GCM;
 	#     exact path varies by Git-for-Windows version):
 	#       helper = "/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"
+
+# ── GitHub auth via the gh CLI ────────────────────────────────────────────────
+# `gh auth setup-git` writes this block to ~/.gitconfig — which on this box is a
+# SYMLINK into the vendored core/git/gitconfig, so it landed in Core's tracked
+# file and showed up as a dirty vendored subtree that `make sync` refuses to
+# touch. It belongs here instead: Core's gitconfig names "credential helper" as
+# an os/*.gitconfig concern, and this is the OS layer. Re-running
+# `gh auth setup-git` will write it back into core/ again — move it here and
+# `git restore core/git/gitconfig` when it does.
+#
+# The empty `helper =` is a RESET, not a typo: it clears the inherited
+# `cache --timeout=86400` above for github.com only, so gh is the sole helper
+# there and other hosts keep the cache. That also means these two hosts have NO
+# fallback if gh is missing — and this repo does not install gh (it is in
+# neither install/packages.txt nor bootstrap.sh). If GitHub auth breaks on a
+# fresh box, either `sudo zypper in gh` or delete this block.
+[credential "https://github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential
