@@ -120,4 +120,13 @@ w3m            # terminal web browser (text-mode; renders tables + inline images
 htop
 flatpak
 gawk
+diffutils      # diff/cmp/diff3. NOT installed by default on Tumbleweed, and nothing
+               # else pulls it in — a fresh box has no `diff` and no `cmp` at all.
+               # Core's sync-core.sh uses `cmp -s` to decide whether it rewrote a
+               # workflow pin, and without it that check fails open: every candidate
+               # file counts as changed and `make sync` reports pins it never moved
+               # (dotfiles-core#572). Note most `diff` you see in Core scripts is
+               # `git diff`, a git subcommand that needs none of this — sync-core.sh
+               # is the one real dependency, but a shell without `diff` is its own
+               # papercut.
 direnv
