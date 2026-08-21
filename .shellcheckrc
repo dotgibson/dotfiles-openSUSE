@@ -19,3 +19,15 @@ source-path=SCRIPTDIR
 # (mapfile, arrays, [[ ]], arithmetic contexts). The zsh files in os/ are NOT checked by
 # ShellCheck — it has no zsh mode — they get `zsh -n` via `make lint` instead.
 shell=bash
+
+# House-style suppressions. These MIRROR the fleet gate in dotfiles-core
+# (.github/workflows/lint-call.yml and bootstrap-test.yml both set
+# SHELLCHECK_OPTS="-e SC1090 -e SC1091 -e SC2015 -e SC2088"). Without them, a local
+# `shellcheck` and an editor disagreed with a green CI — the drift recorded in
+# dotfiles-core#573. Keep them in step: if that list changes upstream, change it here
+# too. File-SPECIFIC suppressions stay INLINE at their use site; they are not global
+# truths and must not be hidden here.
+#   SC1090/SC1091 — runtime `source` of a path ShellCheck cannot follow statically
+#   SC2015        — the deliberate `cmd && ok || warn` idiom used throughout
+#   SC2088        — a literal `~` inside a user-facing MESSAGE, not a path to expand
+disable=SC1090,SC1091,SC2015,SC2088
