@@ -50,7 +50,8 @@ before you audit or extend it:
 
 **No secret material is ever committed to this repository.**
 
-- `.gitignore` tracks `ssh/config` and excludes everything else under `ssh/` — keys are
+- `.gitignore` excludes everything under `ssh/`, and nothing there is tracked now that the
+  client config lives in Core as `core/ssh/config` — keys are
   never tracked.
 - Git identity lives in `~/.config/git/local.gitconfig`, seeded once from Core's example
   and never tracked. `os/opensuse.gitconfig` holds no `[user]` section.
