@@ -58,3 +58,10 @@ jobs:
       # tripping `set -e` (prep runs under `sh -euc`), and the final `command -v zsh`
       # still fails LOUD if zsh genuinely can't be installed (no false green).
       prep: 'for i in 1 2 3 4 5; do if zypper --non-interactive --gpg-auto-import-keys refresh && zypper --non-interactive --gpg-auto-import-keys install bash zsh; then break; fi; echo "zypper prep attempt $i failed (mirror timeout?), retrying in $((i*10))s..." >&2; sleep $((i*10)); done; command -v zsh >/dev/null || { echo "zsh still not installed after 5 attempts" >&2; exit 1; }'
+      # Run provision() for real, with package managers and downloaders replaced by
+      # logging no-ops (dotgibson/dotfiles-core#575). --links-only returns BEFORE
+      # provision() is entered, so package installation, retries, upstream installers,
+      # repo/key setup and every failure path around them were executed by no gate
+      # anywhere. A green run means provision() ran and RETURNED, and wire_links still
+      # happened after it — not that provisioning works: nothing is really installed.
+      provision_stub: true
