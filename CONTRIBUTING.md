@@ -31,7 +31,7 @@ Only what changes with the OS:
 | `os/opensuse.zsh` | clipboard, PATH, zypper aliases → `~/.config/zsh/80-os.zsh` |
 | `os/opensuse.conf` | tmux OS overlay → `~/.config/tmux/os.conf` |
 | `os/opensuse.gitconfig` | git OS overlay → `~/.config/git/os.gitconfig` |
-| `ssh/config`, `wsl/wsl.conf` | client SSH config; WSL systemd/user config |
+| `wsl/wsl.conf` | WSL systemd/user config (the ssh client config is Core's) |
 
 If it would be identical on every distro it belongs in Core. If it changes with the
 operator rather than the OS, it belongs in a role repo (`dotfiles-Offense`,

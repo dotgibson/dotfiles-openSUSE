@@ -35,7 +35,6 @@
 *.md        text eol=lf
 *.txt       text eol=lf
 Makefile    text eol=lf
-ssh/config  text eol=lf
 wsl/wsl.conf text eol=lf
 
 # ── Binaries (defensive): never normalize, never diff as text ─────────────────

@@ -35,8 +35,6 @@ trim_trailing_whitespace = false
 [*.{conf,gitconfig}]
 indent_size = 2
 
-[ssh/config]
-indent_size = 2
 
 # packages.txt is a plain list with aligned trailing comments — leave alignment alone.
 [install/packages.txt]

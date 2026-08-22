@@ -46,10 +46,10 @@ repos:
       - id: markdownlint-cli2
         exclude: '^core/'
 
-  # Secret scanning. This repo tracks ssh/config, ships 1Password helpers, and is
+  # Secret scanning. This repo ships 1Password helpers and is
   # PUBLIC — a key or token committed here is exposed immediately. GitHub's push
   # protection catches provider-pattern tokens server-side, but not a private key
-  # pasted into ssh/config; gitleaks catches it before the commit exists at all.
+  # pasted into a tracked file; gitleaks catches it before the commit exists at all.
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:

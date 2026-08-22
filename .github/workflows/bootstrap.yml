@@ -7,7 +7,7 @@ name: bootstrap
 # The filter is the set of inputs that can change this test's OUTCOME.
 #
 # bootstrap.sh / core/** / os/** / ssh/** are exercised today: the reusable's two jobs
-# are `lint` and `links-only`, and blib_link_core wires ssh/config during a links-only
+# are `lint` and `links-only`, and blib_link_core wires core/ssh/config during a links-only
 # run. The self-reference is here on purpose — a change to this caller (image, prep,
 # inputs) must re-run the test it configures.
 #
