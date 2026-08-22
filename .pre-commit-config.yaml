@@ -1,34 +1,36 @@
-# .pre-commit-config.yaml — author-time guardrails for dotfiles-openSUSE.
+# .pre-commit-config.yaml — author-time guardrails for dotfiles-core.
+# Mirrors the CI checks (.github/workflows/ci.yml) so drift is caught locally,
+# before it is committed and subtree-synced into the nine OS repos.
 #
 #   one-time:  pip install pre-commit && pre-commit install
 #   manual:    pre-commit run --all-files
 #
-# core/.pre-commit-config.yaml exists but is inert here: pre-commit only reads the
-# config at the repo ROOT, so until this file existed nothing ran at commit time —
-# and in particular NOTHING scanned this repo for secrets. The CI lint gate
-# (.github/workflows/lint.yml) calls Core's reusable shellcheck/actionlint workflow
-# only; gitleaks lives in core/'s own pre-commit + audit, which run against
-# dotfiles-core, never against bootstrap.sh / os/ / install/ / ssh/ / wsl/.
-#
-# Hook revs are pinned and deliberately kept in step with core/.pre-commit-config.yaml
-# so the two layers report identically.
+# zsh modules are intentionally excluded from shellcheck/shfmt (shellcheck has no
+# zsh mode); scripts/audit-core.sh runs `zsh -n` on them instead. Each hook scopes
+# itself via `files:`, so there is no global exclude (a global one would also
+# suppress the luacheck hook below).
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: '\.md$|^install/packages\.txt$'
+        exclude: '\.md$'
       - id: end-of-file-fixer
       - id: check-merge-conflict
+      # Parse-check the config/data files that fan out to all nine OS repos: a broken
+      # starship.toml / mise config.toml / workflow yaml is valid text (shellcheck
+      # & zsh -n never see it) but dead at runtime for every consumer. Mirrors the
+      # toml/yaml section in scripts/audit-core.sh.
+      - id: check-toml
       - id: check-yaml
+      # check-json only matches *.json (not the *.jsonc config files) — it guards
+      # nvim/lazy-lock.json, the reproducible-plugin pin set. Mirrors the json arm
+      # in scripts/audit-core.sh.
       - id: check-json
       - id: check-executables-have-shebangs
-      # The exec-bit regression this repo is especially exposed to: edited over an SMB
-      # mount (\\wsl.localhost\...), a rewritten bootstrap.sh loses +x silently. If that
-      # ever reaches the index, the documented `./bootstrap.sh` stops working on a fresh
-      # clone. (core.fileMode=false keeps the INDEX mode correct — see CONTRIBUTING.md —
-      # this is the second line of defence.)
+      # The bug this whole effort started from: a script with a shebang that
+      # isn't executable. Catches exec-bit regressions at commit time.
       - id: check-shebang-scripts-are-executable
 
   - repo: https://github.com/koalaman/shellcheck-precommit
@@ -36,53 +38,41 @@ repos:
     hooks:
       - id: shellcheck
         args: ["-x"]
-        # zsh has no ShellCheck mode; os/*.zsh is covered by `zsh -n` in `make lint`.
-        files: '\.sh$'
-        exclude: '^core/'
+        files: '(\.sh|bin/clip|bin/clip-paste)$'
 
+  # Markdown is the deliverable on this public showcase repo and the one file class
+  # shellcheck/zsh -n/toml-yaml never inspect — so lint it at author time too.
+  # Shares .markdownlint.jsonc with the audit's markdown section (one rule config).
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.23.2
     hooks:
       - id: markdownlint-cli2
-        exclude: '^core/'
 
-  # Secret scanning. This repo tracks ssh/config, ships 1Password helpers, and is
-  # PUBLIC — a key or token committed here is exposed immediately. GitHub's push
-  # protection catches provider-pattern tokens server-side, but not a private key
-  # pasted into ssh/config; gitleaks catches it before the commit exists at all.
+  # Secret scanning — Core ships 1Password helpers (zsh/50-op.zsh), a git-identity
+  # template, and fans out to 9 PUBLIC repos, so a leaked token here amplifies
+  # N-way. gitleaks at author time catches it in the commit diff before it lands;
+  # the audit's "secrets" section (scripts/audit-core.sh) is the CI mirror. Pinned
+  # rev kept in step with GITLEAKS_VERSION by the audit's version-consistency gate.
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
       - id: gitleaks
-        exclude: '^core/'
 
-  # The vendoring contract, enforced locally instead of only at PR time.
-  # core/ is a git subtree of dotgibson/dotfiles-core; anything edited here is
-  # overwritten by the next `make sync` upstream, and the core-integrity workflow
-  # will fail the PR.
-  #
-  # Deliberately inspects the STAGED set via git rather than using `language: fail`
-  # with `files: '^core/'`: pre-commit passes every tracked file in
-  # `pre-commit run --all-files`, so a files-matching hook would fail unconditionally
-  # on a clean tree (core/ always exists). Checking `git diff --cached` is correct in
-  # both flows — it fires on a real commit and is a no-op for --all-files.
-  #
-  # Legitimate core/ changes come from `git subtree pull`, which this hook WILL also
-  # block; that is intended — run those with `git commit --no-verify`, or via the
-  # upstream sync-core.sh fan-out that produces the sync/core-vX.Y.Z PRs.
+  # NB: shfmt is intentionally NOT enforced — the scripts here use a deliberate
+  # compact one-liner style that shfmt would expand (see scripts/audit-core.sh).
+  # luacheck is NOT a standalone hook either: it discovers .luacheckrc by
+  # searching up from the CWD, so run from repo root it misses nvim/.luacheckrc
+  # and floods false "undefined vim" warnings. The audit-core hook below runs it
+  # correctly (from inside nvim/) — one correct invocation, no duplication.
+
+  # The contract check — manifest <-> filesystem drift + exec-bit invariants +
+  # shellcheck + luacheck (run correctly). Local hook so it always runs the
+  # in-repo script (single source of truth, identical to CI).
   - repo: local
     hooks:
-      - id: no-core-edits
-        name: refuse hand-edits to the vendored core/ subtree
-        entry: |
-          bash -c '
-          staged=$(git diff --cached --name-only --diff-filter=ACMR -- core/)
-          [ -z "$staged" ] && exit 0
-          echo "core/ is vendored from dotgibson/dotfiles-core and must not be hand-edited:" >&2
-          echo "$staged" | sed "s/^/  /" >&2
-          echo "Fix it upstream, run '\''make audit'\'' there, then '\''make sync'\''." >&2
-          echo "For a legitimate subtree pull, bypass with: git commit --no-verify" >&2
-          exit 1' --
-        language: system
+      - id: audit-core
+        name: Core manifest/exec-bit audit
+        entry: ./scripts/audit-core.sh --quiet
+        language: script
         pass_filenames: false
         always_run: true
