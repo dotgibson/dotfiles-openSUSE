@@ -357,9 +357,14 @@ provision() {
     curl -fsSL https://mise.run | sh >/dev/null ||
       _note_fail "mise — installer failed; retry: curl -fsSL https://mise.run | sh"
   fi
-  # tree-sitter-cli — NOT in openSUSE repos; nvim-treesitter (main) compiles
-  # parsers locally and needs the CLI (>=0.26.1). Build via cargo, or swap to
-  # `mise use -g tree-sitter`.
+  # tree-sitter CLI — nvim-treesitter (main) compiles parsers locally and needs the
+  # CLI (>=0.26.1). This used to read "NOT in openSUSE repos", and that was wrong: the
+  # CLI ships in the BASE `tree-sitter` package (0.26.8 on Tumbleweed and Leap 16.x),
+  # which is in install/packages.txt as of #113. What openSUSE has no package of is the
+  # name this block was named for — `tree-sitter-cli` is the Arch/Alpine split name, and
+  # searching for it is how the repo concluded "unpackaged" and cargo-built it for so
+  # long. So cargo is now the FALLBACK: the guard below sees the packaged binary on
+  # PATH and skips. Swap to `mise use -g tree-sitter` if you want it newer.
   if ! command -v tree-sitter >/dev/null && command -v cargo >/dev/null; then
     blib_say "tree-sitter-cli (cargo)"
     cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
@@ -384,7 +389,7 @@ provision() {
   if ! command -v tldr >/dev/null && command -v cargo >/dev/null; then
     blib_say "tealdeer (cargo — tldr; not in Leap's primary repos)"
     cargo install --locked tealdeer >/dev/null 2>&1 ||
-      _note_fail "tealdeer — cargo build failed; retry: cargo install --locked tealdeer (on Leap you can instead add the utilities OBS repo: zypper ar https://download.opensuse.org/repositories/utilities/16.0/ utilities)"
+      _note_fail "tealdeer — cargo build failed; retry: cargo install --locked tealdeer (on Leap 16.0 ONLY you can instead add the utilities OBS repo: zypper ar https://download.opensuse.org/repositories/utilities/16.0/ utilities — that repo has no 16.1 build, so on 16.1 cargo is the only route)"
   fi
 
   # ── go/vendor tools from the core-doctor set ─────────────────────────────────
@@ -463,12 +468,17 @@ provision() {
     fi
   fi
 
-  # yq: mikefarah's Go build (jq-for-YAML). Deliberately NOT via _dotfiles_go_install:
-  # its `command -v yq` guard would be satisfied by kislyuk's python-yq — a DIFFERENT
-  # tool that also ships a `yq` binary — and skip, leaving the wrong yq in place. Guard
-  # instead on our own ~/.local/bin/yq plus the mikefarah signature in `yq --version`,
-  # and install straight into ~/.local/bin (which the shell layer puts ahead of /usr/bin,
-  # so the Go build wins over any distro python-yq). Best-effort; never aborts the run.
+  # yq: mikefarah's Go build (jq-for-YAML). PACKAGED as of #113 — repo-oss `yq` is the
+  # Go build itself (4.53.3 on Tumbleweed and Leap 16.x), and kislyuk's Python yq ships
+  # under its own name (`python313-yq`), so install/packages.txt carries `yq` and this
+  # block is now the FALLBACK for a box where zypper skipped the name.
+  # It stays hand-rolled rather than going through _dotfiles_go_install because that
+  # helper's `command -v yq` guard cannot tell the two tools apart: on a distro where
+  # the wrong yq is what `yq` resolves to, it would skip and leave it in place. The
+  # signature guard below is what makes this correct either way — it matches the
+  # mikefarah string in `yq --version`, so the packaged Go build satisfies it and this
+  # is a clean no-op, while a foreign `yq` on PATH does not and gets overridden from
+  # ~/.local/bin (which the shell layer puts ahead of /usr/bin). Never aborts the run.
   if [ ! -x "$HOME/.local/bin/yq" ] && ! yq --version 2>/dev/null | grep -qi mikefarah; then
     local yqbin="$HOME/.local/bin"
     local yqpath="github.com/mikefarah/yq/v4@latest"
