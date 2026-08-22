@@ -87,8 +87,9 @@ Nothing else is rewritten — a third-party action pinned in the identical
 
 **Do not pull the subtree by hand.** A raw `git subtree pull` updates `core/` but not
 `core.lock`, so `core-integrity.sh` compares your tree against a commit the lock no longer
-describes and reports `TAMPERED` until the lock is regenerated — and `make core-lock` does
-**not** exist in every consumer (most carry no root `Makefile`). `sync-core.sh` commits
+describes and reports `TAMPERED` until the lock is regenerated — and no per-repo target
+regenerates it (`make core-lock` is absent in most consumers, and where it exists it only
+prints a redirect back to the fan-out). `sync-core.sh` commits
 both together, and `sync-fanout.yml` runs it for you on every release. If you have already
 done it by hand, the fix is to re-run the fan-out from Core rather than to patch the lock.
 See `RELEASE-STRATEGY.md` on the pinning model.
@@ -130,6 +131,38 @@ machine-specific at 95–99.
 This is where an OS-absolute path is **correct**: your package manager, your clipboard
 backend, your Homebrew prefix, your credential helper. Core is forbidden from naming any
 of them — see `PORTABILITY.md`.
+
+### What Core already does — do not re-add it
+
+The mirror of that rule, and the one that is easy to get wrong in the other direction: an
+OS layer carrying **portable** logic is invisible to every gate the fleet has. `audit-core.sh`
+§5c looks for OS-specifics leaking _into_ Core; nothing looked for portable code stranded
+_outside_ it, which is how the same block came to be hand-maintained in seven OS repos, in
+three drifted variants, until #449. Core owns these now:
+
+| Don't write | Because Core already does it |
+| --- | --- |
+| `direnv hook zsh` | `core/zsh/00-tools.zsh`, band 00 — loads under every `CORE_PROFILE` |
+| `gh completion -s zsh` | `core/zsh/45-plugins.zsh`, after `compinit` and after carapace |
+| `uv generate-shell-completion zsh` | same |
+| `ty generate-shell-completion zsh` | same |
+| your own `_IS_WSL` probe | `_core_is_wsl` (`core/zsh/00-tools.zsh`) |
+
+So a WSL nicety is written against Core's predicate:
+
+```zsh
+if _core_is_wsl; then
+  alias open='explorer.exe'
+  command -v wslview >/dev/null && alias xdg-open='wslview'
+fi
+```
+
+The reusable `lint` workflow fails your repo if it grows one of these back — one rule,
+`scripts/lib/common.sh :: _core_owned_block_hits`, shared by every caller. Hooking a tool
+that exists on **your** OS and nowhere else is still your business and is never flagged.
+
+A tool that belongs to the whole fleet but isn't listed above is a **Core** change, not an
+OS one: send it upstream (below) rather than adding a copy each repo has to maintain.
 
 ## Getting a fix upstream
 

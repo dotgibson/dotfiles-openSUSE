@@ -1073,6 +1073,342 @@ sed -n "s/^x=//p" "$f" | head -n1'
   if [[ -z "$(_core_pipefail_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "pipefail scan: does not flag its own definition"; else fail "pipefail scan: flagged common.sh itself"; fi
 fi
 
+# ── leaked-RETURN-trap scanner (scripts/lib/common.sh :: _core_return_trap_hits) ───
+# WHY THIS IS TESTED. audit-core.sh §5e is the ONLY gate anywhere that can see this bug.
+# The broken line is valid bash, so the lint and syntax sections both pass it; and
+# bootstrap-test.yml only ever runs --links-only, so the code where it detonates is executed
+# by nothing (#512, #461). A gate that is the sole line of defence, for a bug that has
+# already shipped green in two repos, is worth proving fires. Probe-testing it while it was
+# written is what found the line-start anchor: the version this repo nearly shipped catches
+# ONE of the four broken shapes below, and the one it misses is the likeliest of them.
+#
+# Both halves are pinned — what it catches AND what it must ignore. The second half is not
+# padding. The false-positive class is what gets a gate switched off, and dotfiles-Debian's
+# own fix carries three comment lines naming the signal directly above its corrected traps:
+# a scanner without the comment filter would red the repo that FIXED the bug.
+#
+# THE SIGNAL NAME IS ASSEMBLED, NOT WRITTEN LITERALLY — the same move, for the same reason,
+# as _pf_p in the pipefail block above. §5e scans this file, and a file whose job is to test
+# the banned shape necessarily contains it; the first run flagged eight of its own lines.
+# Keeping the literal out of this source is the honest fix: the fixture written to disk is
+# byte-identical to the real hazard, so the assertions still exercise the true pattern. An
+# inline "allow" marker in the scanner was rejected for the same reason it was there — an
+# escape hatch invites silencing a real finding. The assertion MESSAGES are worded around
+# it too, which is why none of them says the shape out loud.
+if have git; then
+  hdr "leaked-RETURN-trap scanner (_core_return_trap_hits)"
+  _rtd="$SANDBOX/returntrap"
+  mkdir -p "$_rtd"
+  _rt_write() { printf '%s\n' "$2" >"$_rtd/$1"; }   # _rt_write <name> <body>
+  _rt_s='RETURN'
+  # The handler body is a placeholder, not a real cleanup: what is under test is the signal
+  # operand and the disarm, so a literal `rm -rf` in a fixture would be risk for no gain.
+
+  # ── the four broken shapes ──
+  # The ONE-LINE BODY is first because it is the shape a line-start anchor misses, and it is
+  # how this is most often written: the whole helper fits on one line, so the handler does too.
+  _rt_write oneline.sh "#!/usr/bin/env bash
+f() { trap CLEAN $_rt_s; }"
+  if [[ "$(_core_return_trap_hits "$_rtd/oneline.sh")" == 2 ]]; then pass "RETURN scan: catches a one-line function body"; else fail "RETURN scan: missed the one-line function body — is the pattern anchored to line-start again?"; fi
+
+  _rt_write ownline.sh "#!/usr/bin/env bash
+f() {
+  trap CLEAN $_rt_s
+}"
+  if [[ "$(_core_return_trap_hits "$_rtd/ownline.sh")" == 3 ]]; then pass "RETURN scan: catches the dotfiles-Debian#2 shape (handler on its own line)"; else fail "RETURN scan: missed the own-line shape"; fi
+
+  # A TRAILING COMMENT must not hide it. This is why the signal is matched as a TOKEN rather
+  # than as the last word on the line — anchoring to end-of-line waves this straight through.
+  _rt_write trailing.sh "#!/usr/bin/env bash
+f() { trap CLEAN $_rt_s  # cleanup
+}"
+  if [[ "$(_core_return_trap_hits "$_rtd/trailing.sh")" == 2 ]]; then pass "RETURN scan: catches a handler with a trailing comment"; else fail "RETURN scan: missed a trailing comment — is the signal anchored to end-of-line again?"; fi
+
+  # TWO SIGNALS leak in exactly the same way, and here the signal is not the last operand.
+  _rt_write multisig.sh "#!/usr/bin/env bash
+f() { trap CLEAN $_rt_s EXIT; }"
+  if [[ "$(_core_return_trap_hits "$_rtd/multisig.sh")" == 2 ]]; then pass "RETURN scan: catches a second signal after the first"; else fail "RETURN scan: missed the two-signal form"; fi
+
+  # ── what it must NOT flag ──
+  # The disarming form is the FIX. Flagging it would punish the cure and leave no way to
+  # write a correct one at all.
+  _rt_write fixed.sh "#!/usr/bin/env bash
+f() { trap \"trap - $_rt_s; CLEAN\" $_rt_s; }"
+  if [[ -z "$(_core_return_trap_hits "$_rtd/fixed.sh")" ]]; then pass "RETURN scan: a self-disarming body is not a finding"; else fail "RETURN scan: flagged the disarming fix"; fi
+
+  # Writing ABOUT the hazard must not trip it — this repo now documents it in three places,
+  # and so does the fix in dotfiles-Debian.
+  _rt_write comment.sh "#!/usr/bin/env bash
+# trap CLEAN $_rt_s is the shape this gate exists to catch
+f() { trap \"trap - $_rt_s; CLEAN\" $_rt_s; }"
+  if [[ -z "$(_core_return_trap_hits "$_rtd/comment.sh")" ]]; then pass "RETURN scan: a comment describing the hazard is not a finding"; else fail "RETURN scan: flagged a comment"; fi
+
+  # Every OTHER signal is fine — only this one has the leaking-slot semantics. An EXIT
+  # handler inside a function is ordinary, and this repo uses several.
+  _rt_write exitonly.sh '#!/usr/bin/env bash
+f() { trap CLEAN EXIT; }'
+  if [[ -z "$(_core_return_trap_hits "$_rtd/exitonly.sh")" ]]; then pass "RETURN scan: an EXIT handler is not a finding"; else fail "RETURN scan: flagged an EXIT handler"; fi
+
+  # The word in prose, or as part of a longer identifier, is not a signal operand.
+  _rt_write prose.sh "#!/usr/bin/env bash
+f() { echo \"check the $_rt_s value\"; }"
+  if [[ -z "$(_core_return_trap_hits "$_rtd/prose.sh")" ]]; then pass "RETURN scan: the bare word in prose is not a finding"; else fail "RETURN scan: flagged the word where no handler is armed"; fi
+
+  # and the gate must not flag the library that defines it
+  if [[ -z "$(_core_return_trap_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "RETURN scan: does not flag its own definition"; else fail "RETURN scan: flagged common.sh itself"; fi
+
+  # nor this file, whose fixtures are the banned shape by construction — the assembly above
+  # is what makes that true, and a regression in it must fail HERE rather than in §5e
+  if [[ -z "$(_core_return_trap_hits "$HERE/scripts/test-core.sh")" ]]; then pass "RETURN scan: does not flag its own fixtures (the signal name stays assembled)"; else fail "RETURN scan: this file now spells the banned shape literally — keep the name in \$_rt_s"; fi
+
+  # ── SHELLCHECK_OPTS parity across the two workflows that lint the same file ──
+  # lint-call.yml and bootstrap-test.yml BOTH run shellcheck over an OS repo's bootstrap.sh.
+  # For a long time only the first set the fleet's curated exclusions, so the same commit
+  # could be green in `lint` and red in `bootstrap` — with an error naming a rule the fleet
+  # had documented as excluded (#517). SC2088 is the one that fires, because a bootstrap's
+  # user-facing strings are full of ~/.zshrc and ~/.config.
+  #
+  # It is not shareable state: GitHub has no way to import an env value from one workflow
+  # into another, so the value is authored twice by necessity. This is the assertion that
+  # keeps the two copies equal — the same shape as the os-repos.txt fallback-array check
+  # above, and for the same reason: a literal duplicated across files with nothing comparing
+  # them is exactly the N-way drift the reusable workflows exist to end.
+  # The multi-value test below is `== *$'\n'*`, NOT `$(wc -l) != 1`: BSD wc pads its count
+  # with leading spaces ("       1"), so the string compare is true on macOS and false on
+  # Linux — this assertion shipped with exactly that bug and the macOS leg caught it. A
+  # bash-native newline test has no such divergence, and needs no external tool.
+  _sco_of() { # _sco_of <workflow> → the SHELLCHECK_OPTS value, or empty
+    sed -n 's/^[[:space:]]*SHELLCHECK_OPTS:[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$1" 2>/dev/null | sort -u
+  }
+  _sco_lc="$(_sco_of "$HERE/.github/workflows/lint-call.yml")"
+  _sco_bt="$(_sco_of "$HERE/.github/workflows/bootstrap-test.yml")"
+  if [[ -z "$_sco_lc" || -z "$_sco_bt" ]]; then
+    fail "SHELLCHECK_OPTS parity: could not read the value from both workflows (lint-call='$_sco_lc' bootstrap-test='$_sco_bt')"
+  elif [[ "$_sco_lc" == *$'\n'* ]]; then
+    fail "SHELLCHECK_OPTS parity: lint-call.yml carries more than one distinct value — the steps disagree with each other"
+  elif [[ "$_sco_lc" != "$_sco_bt" ]]; then
+    fail "SHELLCHECK_OPTS parity: lint-call.yml has '$_sco_lc' but bootstrap-test.yml has '$_sco_bt' — the same bootstrap.sh would be green in one gate and red in the other (#517)"
+  else
+    pass "SHELLCHECK_OPTS parity: both gates that lint bootstrap.sh use the same exclusions"
+  fi
+
+  # ── ONE definition, and it must stay one ──
+  # The fleet-facing leg in .github/workflows/lint-call.yml gates the nine caller repos with
+  # the SAME rule §5e applies here. It first shipped with the pattern inlined (#552) while
+  # the helper landed separately (#555), so for one release the rule existed twice and only
+  # the copy below was tested — the fleet-facing half was the one that could drift unseen.
+  # These two assertions are what stop that from recurring: the workflow must CALL the
+  # helper, and must not carry a second copy of the expression. Cheap, and it fails in the
+  # suite rather than the next time someone corrects one copy and not the other.
+  _rt_wf="$HERE/.github/workflows/lint-call.yml"
+  if [[ ! -r "$_rt_wf" ]]; then
+    skip "RETURN scan: lint-call.yml not readable (partial checkout?)"
+  elif ! grep -q '_core_return_trap_hits' "$_rt_wf"; then
+    fail "RETURN scan: lint-call.yml no longer calls _core_return_trap_hits — the fleet gate has drifted off the shared definition"
+  elif grep -qE 'trap\[\[:space:\]\]' "$_rt_wf"; then
+    fail "RETURN scan: lint-call.yml carries its own copy of the pattern — call the helper instead, so the rule has one definition"
+  else
+    pass "RETURN scan: the fleet gate (lint-call.yml) calls the helper rather than copying the pattern"
+  fi
+fi
+# ── Core-owned block scanner (scripts/lib/common.sh :: _core_owned_block_hits) ─────
+# WHY THIS IS TESTED. This scanner is the ONLY thing standing between the fleet and the
+# defect it was written for coming straight back. Seven OS repos each hand-maintained the
+# direnv/gh/uv/ty init block and six the WSL probe; by the time anyone counted, the copies
+# had drifted into THREE variants of one block, and two repos silently lacked half the
+# tools. Nothing could see it: the duplicate is valid zsh, `zsh -n` passes it, the shell
+# keeps working, and audit-core.sh §5c looks the other way down the boundary (OS-specifics
+# leaking INTO Core, not portable logic stranded outside it). It was found by reading two
+# layers side by side, which is not a gate (#449).
+#
+# Both halves are pinned, as in the RETURN block above, and for the same reason: the
+# false-positive class is what gets a gate switched off. Here that risk is sharper than
+# usual, because an OS layer's legitimate business — hooking a tool that exists on ONE OS —
+# looks superficially identical to the thing being banned. Every ignore case below is a
+# shape a real OS layer either has today or will write tomorrow.
+#
+# NOTE the inverted self-reference rule vs the two scanners above: those must not flag their
+# own definition or this file. THIS one must not flag common.sh (the pattern table spells the
+# kernel version file as a character class precisely so it doesn't) but MUST flag Core's two
+# owning modules — that is the inverse assertion at the end of this block, and it is the
+# only direction that catches Core quietly losing a block the fleet has been made to delete.
+hdr "Core-owned block scanner (_core_owned_block_hits)"
+_obd="$SANDBOX/ownedblock"
+mkdir -p "$_obd"
+_ob_write() { printf '%s\n' "$2" >"$_obd/$1"; }   # _ob_write <name> <body>
+# _ob_is <file> <expected>  — the scanner's full output must equal <expected> exactly.
+# Exact, not "contains": a rule that fires on the right line for the wrong reason, or fires
+# twice, is a finding the operator has to triage, and this gate's whole value is that its
+# output is a delete-list.
+_ob_is() { # _ob_is <label> <file> <expected>
+  local got
+  got="$(_core_owned_block_hits "$_obd/$2")"
+  if [[ "$got" == "$3" ]]; then
+    pass "owned-block scan: $1"
+  else
+    fail "owned-block scan: $1 (got '${got//$'\n'/, }', want '${3//$'\n'/, }')"
+  fi
+}
+
+# ── what it must catch: the cached arm, one fixture per rule ──
+_ob_write direnv.zsh "# os layer
+_cache_eval direnv direnv hook zsh"
+_ob_is "the direnv hook is a finding" direnv.zsh "2:direnv-hook"
+
+_ob_write gh.zsh "# os layer
+_cache_eval gh gh completion -s zsh"
+_ob_is "the gh completion is a finding" gh.zsh "2:gh-completion"
+
+_ob_write uv.zsh "# os layer
+_cache_eval uv uv generate-shell-completion zsh"
+_ob_is "the uv completion is a finding" uv.zsh "2:uv-completion"
+
+_ob_write ty.zsh "# os layer
+_cache_eval ty ty generate-shell-completion zsh"
+_ob_is "the ty completion is a finding" ty.zsh "2:ty-completion"
+
+# THE EAGER FALLBACK ARM, which is half of every real copy. All seven os/*.zsh wrapped the
+# block in `if (( \$+functions[_cache_eval] )); then … else <bare eval> fi`, so a scanner
+# that only knew the _cache_eval shape would wave through the else-branch of every one of
+# them and report the repo clean after a half-deletion.
+_ob_write fallback.zsh "# os layer
+command -v gh >/dev/null 2>&1 && eval \"\$(gh completion -s zsh 2>/dev/null)\""
+_ob_is "the bare-eval fallback arm is a finding too" fallback.zsh "2:gh-completion"
+
+# ── what it must catch: the WSL probe, both halves ──
+_ob_write wslproc.zsh "# os layer
+elif [[ -r /proc/version ]]; then"
+_ob_is "reading the kernel version file is a finding" wslproc.zsh "2:wsl-detect"
+
+_ob_write wslvar.zsh "# os layer
+_IS_WSL=0"
+_ob_is "the hand-rolled _IS_WSL flag is a finding" wslvar.zsh "2:wsl-detect"
+
+# ── the whole block, as an OS layer actually writes it ──
+# Sorted numerically, deduped, one entry per offending line: this output IS the delete-list
+# the fan-out PRs work from, so its shape is part of the contract.
+_ob_write full.zsh "# ── Detect WSL once ──
+_IS_WSL=0
+if [[ -n \"\${WSL_DISTRO_NAME:-}\" ]]; then
+  _IS_WSL=1
+elif [[ -r /proc/version ]]; then
+  _pv=\"\$(</proc/version)\"; _pv=\${_pv:l}
+  [[ \"\$_pv\" == *microsoft* || \"\$_pv\" == *wsl* ]] && _IS_WSL=1
+fi
+if (( \$+functions[_cache_eval] )); then
+  _cache_eval direnv direnv hook zsh
+  _cache_eval gh gh completion -s zsh
+else
+  command -v direnv >/dev/null 2>&1 && eval \"\$(direnv hook zsh)\"
+fi"
+_ob_is "a real os-layer block reports every line, sorted and deduped" full.zsh \
+  "2:wsl-detect
+4:wsl-detect
+5:wsl-detect
+6:wsl-detect
+7:wsl-detect
+10:direnv-hook
+11:gh-completion
+13:direnv-hook"
+
+# ── what it must NOT catch ──
+# The pointer comment the fan-out PRs replace the deleted block with. If this fires, the
+# gate reds the repo that made the fix — the failure mode that switches a gate off.
+_ob_write comment.zsh "# Deleted: direnv hook zsh is Core's now (core/zsh/00-tools.zsh), as is the
+# WSL probe (_core_is_wsl); this file read /proc/version itself until #449."
+_ob_is "the pointer comment replacing a deleted block is not a finding" comment.zsh ""
+
+# AN OS-ONLY TOOL'S HOOK IS THE OS LAYER'S BUSINESS — the entire point of the band. This is
+# the ignore case that matters most: it is the shape the fix's own comment tells authors to
+# keep writing, and the one a tool-name-based pattern would have destroyed.
+_ob_write osonly.zsh "# os layer
+_cache_eval brew brew shellenv
+_cache_eval pyenv pyenv init -"
+_ob_is "an OS-only tool's own hook is not a finding" osonly.zsh ""
+
+# Using a tool is not registering its completion.
+_ob_write verbs.zsh "alias dv=direnv
+direnv allow
+gh pr create --fill
+uv sync"
+_ob_is "calling the tools is not a finding" verbs.zsh ""
+
+# Reading the distro NAME is a different use from re-implementing the DETECTION — a prompt
+# segment, a window title, a hostname. Only the latter is Core's, which is why the rule keys
+# on the version file and the flag rather than on the env var.
+_ob_write distroname.zsh "[[ -n \${WSL_DISTRO_NAME:-} ]] && print -r -- \"\$WSL_DISTRO_NAME\""
+_ob_is "reading the distro name is not a finding" distroname.zsh ""
+
+# THE FIX ITSELF MUST NEVER BE A FINDING.
+_ob_write fixed.zsh "if _core_is_wsl; then
+  alias open='explorer.exe'
+fi"
+_ob_is "calling Core's _core_is_wsl is not a finding" fixed.zsh ""
+
+# and the gate must not flag the library that defines it (see the character-class note there)
+if [[ -z "$(_core_owned_block_hits "$HERE/scripts/lib/common.sh")" ]]; then
+  pass "owned-block scan: does not flag its own definition"
+else
+  fail "owned-block scan: flagged common.sh itself — the rule table now spells a pattern it defines"
+fi
+
+# ── the INVERSE assertion: Core must still carry what it makes the fleet delete ──
+# This is this gate's counterpart to §5e, and the reason there is deliberately no
+# audit-core.sh section calling the scanner: Core's own tree matches every pattern, which is
+# the point. A gate that forces nine repos to delete a block Core has quietly lost is worse
+# than no gate — the niceties simply go silent everywhere at once, with every repo green.
+_ob_core_ok=1
+for _obf in zsh/00-tools.zsh zsh/45-plugins.zsh; do
+  [[ -n "$(_core_owned_block_hits "$HERE/$_obf")" ]] || _ob_core_ok=0
+done
+if (( _ob_core_ok )); then
+  pass "owned-block scan: Core still carries the blocks it makes the fleet drop"
+else
+  fail "owned-block scan: Core no longer carries a block the fleet is gated on — the fleet gate is now making nine repos delete a feature nobody provides"
+fi
+unset _ob_core_ok _obf
+
+# ── the fleet itself, when it is checked out ──
+# The direct regression signal, and the only assertion here that watches the real defect
+# rather than a fixture. SKIPs when a sibling clone is absent (CI, a partial checkout), the
+# same graceful degradation scripts/fleet-drift.sh uses — a missing repo is not a failure.
+# EXPECTED TO SKIP OR FAIL until the fan-out lands: the copies are still there on the day
+# Core takes the blocks over, which is exactly why the lint leg ships advisory (#449).
+_ob_fleet_seen=0 _ob_fleet_dirty=""
+# Siblings of this repo, the layout every fleet script assumes (see scripts/sync-core.sh).
+_ob_root="$(cd "$HERE/.." && pwd)"
+for _obr in dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-openSUSE; do
+  _obp="$(resolve_repo_dir "$_ob_root" "$_obr" 2>/dev/null)" || continue
+  [[ -n "$_obp" && -d "$_obp" ]] || continue
+  for _obf in "$_obp"/os/*.zsh; do
+    [[ -f "$_obf" ]] || continue
+    _ob_fleet_seen=$((_ob_fleet_seen + 1))
+    [[ -z "$(_core_owned_block_hits "$_obf")" ]] || _ob_fleet_dirty="$_ob_fleet_dirty ${_obr}"
+  done
+done
+if (( _ob_fleet_seen == 0 )); then
+  skip "owned-block scan: no sibling OS repo checked out (fleet regression check)"
+elif [[ -n "$_ob_fleet_dirty" ]]; then
+  skip "owned-block scan: fan-out pending —$_ob_fleet_dirty still carry a Core-owned block (#449 step 7)"
+else
+  pass "owned-block scan: all $_ob_fleet_seen checked-out os layers are free of Core-owned blocks"
+fi
+unset _ob_fleet_seen _ob_fleet_dirty _ob_root _obr _obp _obf
+
+# ── ONE definition, and it must stay one (same contract as the RETURN leg above) ──
+_ob_wf="$HERE/.github/workflows/lint-call.yml"
+if [[ ! -r "$_ob_wf" ]]; then
+  skip "owned-block scan: lint-call.yml not readable (partial checkout?)"
+elif ! grep -q '_core_owned_block_hits' "$_ob_wf"; then
+  fail "owned-block scan: lint-call.yml no longer calls _core_owned_block_hits — the fleet gate has drifted off the shared definition"
+elif grep -qE 'generate-shell-completion|hook\[\[:space:\]\]' "$_ob_wf"; then
+  fail "owned-block scan: lint-call.yml carries its own copy of the patterns — call the helper instead, so the rule has one definition"
+else
+  pass "owned-block scan: the fleet gate (lint-call.yml) calls the helper rather than copying the patterns"
+fi
+unset _ob_wf
+
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
@@ -1245,7 +1581,12 @@ if have git; then
   # moment the count was met: a NEW content gate could use bare `git ls-files` and still
   # satisfy it. Exactness makes adding either kind of enumeration fail here until someone
   # picks a side, which is the decision this rule exists to force.
-  _als_expect="audit-core.sh:8:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  # audit-core.sh 8→9 content calls: §5e (leaked RETURN trap) enumerates via _audit_ls.
+  # It is a CONTENT gate — "is this file's text valid?" — so an untracked-but-not-ignored
+  # script is in scope: a brand-new helper arming a leaked trap must be caught BEFORE it is
+  # `git add`ed, not one round-trip later. That is the side of the rule this tripwire made
+  # explicit, which is what it is for.
+  _als_expect="audit-core.sh:9:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
   _als_bad=""
   for _als_spec in $_als_expect; do
     _als_f="${_als_spec%%:*}"
@@ -5215,10 +5556,15 @@ fi
 # >=70 always load, independent of CORE_PROFILE). Section A proves Core-in-isolation;
 # this proves the documented CONSUMPTION — the Core→OS CONTRACT at the real fan-out shape.
 # The 80-os stub uses exactly what an OS layer relies on Core to have left defined:
-# _cache_eval (00-tools's API for the OS layer's gh/uv/ty inits — NOT unfunctioned like
-# _have is), the _core_* UX primitives (05-ui), and an alias override (the macOS rm→trash
-# pattern). 99-local overrides a Core default. If Core ever stops exporting one of those,
-# this fails — where Section A, loading Core alone, would stay green.
+# _cache_eval (00-tools's API — NOT unfunctioned like _have is), _core_is_wsl (the second
+# such API, added in #449 so six OS layers could stop re-deriving the same probe), the
+# _core_* UX primitives (05-ui), and an alias override (the macOS rm→trash pattern).
+# 99-local overrides a Core default. If Core ever stops exporting one of those, this fails
+# — where Section A, loading Core alone, would stay green.
+#
+# IT ALSO PROVES WHAT BAND 80 USED TO PROVE AND NO LONGER CAN. The direnv/gh/uv/ty inits
+# moved into Core in #449, so the generate→cache→source path for the four tools the whole
+# fleet installs is now Core's own code on the real loader — see the stub generators below.
 hdr "consumer integration (Core + 80-os + 99-local, v4 loader)"
 INTEG="$SANDBOX/integ"
 mkdir -p "$INTEG"
@@ -5227,10 +5573,30 @@ for f in "${core_frags[@]}"; do ln -s "$f" "$INTEG/$(basename "$f")"; done
 _seed_plugin_dirs "$SANDBOX/integ-data/zsh/plugins"
 # 80-os.zsh: realistic OS-layer fragment. Exercises the Core helpers an OS repo depends
 # on; any reference to an undefined helper prints to stderr (the failure signal below).
+# Stub generators for the four tools Core now hooks itself (#449). Each "generated init"
+# is a single sentinel print, so a sentinel reaching stdout proves the whole
+# generate→cache→source path ran for that tool, under the REAL loader, in the real band
+# order — direnv from 00-tools at band 00, the three completions from 45-plugins at band 45.
+# A real box has some subset of these installed; the sandbox has none, so without stubs
+# _cache_eval bails on ${commands[…]} and all four lines are silent no-ops that could rot
+# unnoticed. (Side effect worth naming so nobody chases it: the `uv` stub sets HAVE_UV, so
+# 20-aliases.zsh defines uvr/uvs. Harmless here.)
+INTEGBIN="$SANDBOX/integ-bin"
+mkdir -p "$INTEGBIN"
+for _it in direnv gh uv ty; do
+  printf '#!/bin/sh\nprintf "%%s\\n" "print -r -- CORE_INIT_%s"\n' \
+    "$(printf '%s' "$_it" | tr '[:lower:]' '[:upper:]')" >"$INTEGBIN/$_it"
+  chmod +x "$INTEGBIN/$_it"
+done
+unset _it
 cat >"$INTEG/80-os.zsh" <<'OSZSH'
 # stub 80-os.zsh — must be able to use the API Core promises the OS layer.
 (( $+functions[_cache_eval] )) || print -u2 "80-os.zsh: _cache_eval missing (00-tools API gone)"
 (( $+functions[_core_ok]    )) || print -u2 "80-os.zsh: _core_ok missing (05-ui API gone)"
+(( $+functions[_core_is_wsl] )) || print -u2 "80-os.zsh: _core_is_wsl missing (00-tools API gone)"
+# The shape all six WSL-carrying OS layers adopt in place of their deleted probe (#449).
+# The answer does not matter here; that the call works from band 80 does.
+if _core_is_wsl; then alias winopen='explorer.exe'; fi
 # the documented gh/uv/ty pattern: _cache_eval a tool AFTER 10-options.zsh set NO_CLOBBER.
 # The generator must emit SOURCEABLE zsh (real tools emit an init script); a comment is
 # a valid no-op init and proves the generate→cache→source path works under NO_CLOBBER.
@@ -5254,6 +5620,7 @@ integ_out="$(
     XDG_CACHE_HOME="$SANDBOX/integ-cache" XDG_STATE_HOME="$SANDBOX/integ-state" \
     XDG_DATA_HOME="$SANDBOX/integ-data" \
     XDG_RUNTIME_DIR="$SANDBOX/run" MISE_TRUSTED_CONFIG_PATHS="$HERE" \
+    PATH="$INTEGBIN:$PATH" \
     zsh -f -i -c "ZDOTDIR='$INTEG'; source \"\$ZDOTDIR/.zshrc\"" 2>"$INTEG/integ.err"
 )"
 integ_errs="$(grep -Ei \
@@ -5268,6 +5635,19 @@ elif [[ -n "$integ_errs" ]]; then
 else
   pass "Core + 80-os + 99-local loaded via the loader (Core→OS contract holds)"
 fi
+
+# The four tool inits Core took over from the OS layers in #449. Asserted individually
+# rather than as a set: when this breaks it is nearly always ONE tool (a renamed generator
+# subcommand, a line moved across a band boundary), and a combined check would only say
+# "something".
+for _it in DIRENV GH UV TY; do
+  if grep -q "^CORE_INIT_$_it\$" <<<"$integ_out"; then
+    pass "consumer load: Core sourced the $_it init (was the OS layer's job until #449)"
+  else
+    fail "consumer load: Core never sourced the $_it init — the block is not reaching a real shell"
+  fi
+done
+unset _it
 
 # ── A3. profile filtering (CORE_PROFILE ceilings + env/file resolution) ───────
 # A2 proves the FULL chain; this proves the minimal/standard ceilings, that outer
@@ -5530,15 +5910,43 @@ assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys
 # Direction is deliberately one-way: probed ⊆ reported. The reverse would fail on `op` (no
 # HAVE_OP — the doctor probes it live) and on `fd`/`bat`, which 00-tools.zsh sets from
 # FD_BIN/BAT_BIN after resolving fdfind/batcat rather than with a bare `_have` line.
+# `^_have +` and not `^_have `: 00-tools.zsh aligns a couple of trailing comments with two
+# spaces (tldr is one), and the single-space form silently dropped those rows from the set —
+# a coverage guard that read stronger than it was. The quantifier takes it 37 → 38.
 check_dep "core-doctor reports every tool 00-tools.zsh probes (no silently undetected tools)" python3 \
   '_TOOLS_SRC="'"$HERE"'/zsh/00-tools.zsh" _CD_J="$(core-doctor --json)" python3 -c "
 import json, os, re
-probed   = set(re.findall(r\"(?m)^_have ([A-Za-z0-9_.-]+)\", open(os.environ[\"_TOOLS_SRC\"]).read()))
+probed   = set(re.findall(r\"(?m)^_have +([A-Za-z0-9_.-]+)\", open(os.environ[\"_TOOLS_SRC\"]).read()))
 reported = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
 missing  = sorted(probed - reported)
 assert probed, \"parsed no _have lines out of 00-tools.zsh\"
 assert not missing, \"detected by 00-tools.zsh but absent from core-doctor: %s\" % missing
 "'
+# ...and now the REVERSE direction, which the note above declined to assert because three
+# rows legitimately have no `_have` line. Declining it entirely left a hole: the check above
+# derives its tool -> flag mapping from the very line that sets the flag, so DELETING
+# `_have jq && HAVE_JQ=1` does not make it fail — it just removes jq from both sides and the
+# suite goes quiet. That is the #447 failure mode itself (the doctor promising a tool Core
+# never wired), so assert it directly, with the three exceptions named rather than waived.
+#
+# op is deliberate: the doctor probes it live and no alias or function is gated on it. fd and
+# bat are set from FD_BIN/BAT_BIN after resolving fdfind/batcat, so their assignments do not
+# match `^_have`. A NEW name showing up here is not a fourth exception to add — it means a
+# doctor row has no detection behind it, which is the bug.
+# Pure zsh so it runs everywhere; _CORE_DOCTOR_GROUPS is the inventory the parity test above
+# already proves equal to both renderers' output.
+check "every core-doctor row has a HAVE_* probe behind it (or is a documented exception)" \
+  'paired=(); exempt=(op fd bat); missing=()
+   for line in ${(f)"$(<'"$HERE"'/zsh/00-tools.zsh)"}; do
+     [[ $line =~ "^_have +([A-Za-z0-9_.-]+) +&& +HAVE_[A-Z0-9_]+=1" ]] && paired+=($match[1])
+   done
+   (( ${#paired} >= 30 )) || { print -r -- "parsed only ${#paired} _have lines"; exit 1; }
+   for ((gi = 2; gi <= ${#_CORE_DOCTOR_GROUPS}; gi += 2)); do
+     for t in ${=_CORE_DOCTOR_GROUPS[gi]}; do
+       (( ${paired[(I)$t]} )) || (( ${exempt[(I)$t]} )) || missing+=($t)
+     done
+   done
+   (( ${#missing} == 0 )) || { print -r -- "doctor rows with no detection behind them: $missing"; exit 1; }'
 # git-absorb is the first --json tools key that is NOT a bare identifier, and the JSON is
 # hand-rolled by _core_doctor_json rather than produced by a serialiser — so the hyphen has
 # to survive quoting on its own merit. The set-equality check above cannot see this: it
@@ -5598,6 +6006,45 @@ check "_core_wired accepts carapace's current hook name (_carapace_completer)" \
   '_carapace_completer() { :; }; _core_wired carapace'
 check "_core_wired is false for an idle carapace" \
   '_core_wired carapace 2>/dev/null; (( $? != 0 ))'
+# ── The wired list must not drift from the arms that implement it (#447) ──────────────
+# _CORE_DOCTOR_WIRED is what BOTH renderers iterate; the `case` arms of _core_wired are what
+# actually probe. Those were three hand-synced literals until this change, and — unlike the
+# tool axis — nothing could see a drift: the render⇄json parity test above stubs _core_have
+# false, which makes the "integrations wired" block skip every entry by construction. So the
+# guard has to be built here, in both directions, because the two drifts are different bugs.
+#
+# The sentinel first, because the next assertion is vacuous without it: an unknown name must
+# return exactly 2, not merely non-zero. Reverting that arm to `return 1` makes "no arm for
+# this name" indistinguishable from "installed but idle" and silently disarms the check below.
+check "_core_wired returns the distinct exit 2 for a name it has no arm for" \
+  '_core_wired bogustool 2>/dev/null; (( $? == 2 ))'
+# Direction 1 — every listed name has an arm. This is the drift that renders a WRONG report:
+# a name in the array with no arm falls to `*)` and prints `○ (idle)` forever, on every box,
+# no matter what the user installs or configures. Runtime, so it needs no source parsing.
+# `_core_wired` is called with the hooks undefined, so a correctly-armed tool returns 1 here;
+# only 2 is a failure.
+check "every _CORE_DOCTOR_WIRED entry has a matching _core_wired arm" \
+  'for t in $_CORE_DOCTOR_WIRED; do
+     _core_wired "$t" 2>/dev/null
+     (( $? == 2 )) && { print -r -- "no _core_wired arm for: $t"; exit 1; }
+   done
+   (( ${#_CORE_DOCTOR_WIRED} > 0 ))'
+# Direction 2 — every arm is listed. This is the drift that renders a MISSING report: a tool
+# gains a probe nobody iterates, so its wiredness is never shown and the omission is silent
+# (exactly how twelve tools went unreported on the tool axis for releases). Not observable at
+# runtime — an unlisted arm is unreachable by definition — so read the arms out of the source,
+# the same technique as the "probed ⊆ reported" test above. Skips without python3, like its
+# neighbours.
+check_dep "every _core_wired arm appears in _CORE_DOCTOR_WIRED (no unreachable probes)" python3 \
+  '_FN_SRC="'"$HERE"'/zsh/30-functions.zsh" _CD_W="$_CORE_DOCTOR_WIRED" python3 -c "
+import os, re
+src  = open(os.environ[\"_FN_SRC\"]).read()
+body = re.search(r\"(?s)^_core_wired\\(\\) \\{.*?^\\}\", src, re.M).group(0)
+arms = set(re.findall(r\"(?m)^  ([a-z][a-z0-9-]*)\\)\", body))
+listed = set(os.environ[\"_CD_W\"].split())
+assert arms, \"parsed no case arms out of _core_wired\"
+assert not arms - listed, \"probed by _core_wired but never rendered: %s\" % sorted(arms - listed)
+"'
 # core-help (U5): the width-aware renderer must emit every verb and never crash on its
 # kw arithmetic — including a pathologically narrow terminal where the key column clamps.
 check "core-help renders all verbs (wide terminal)" \
@@ -6297,6 +6744,292 @@ _rn_only
 ucheck "renamed: neither present → no bat/fd/cat alias and the doctor reports absent" \
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ -z \${HAVE_BAT:-} && -z \${HAVE_FD:-} ]] && ! (( \$+aliases[bat] )) && ! (( \$+aliases[fd] )) && ! (( \$+aliases[cat] )) && [[ \$j == *'\"bat\":false'* && \$j == *'\"fd\":false'* ]]" \
   PATH="$RNBIN" CORE_NO_PAGER=1
+
+
+# ── user bindirs reach PATH BEFORE detection (#425) ──────────────────────────
+# 00-tools.zsh prepends the per-user bindirs language installers write into, then probes
+# for HAVE_* flags. It used to prepend only ~/.local/bin, so a `cargo install`ed tool —
+# which lands in $CARGO_HOME/bin, and reached PATH only via the OS layer at band 80, a
+# whole load-order band AFTER detection — got no flag, no alias, and no shell init, while
+# core-doctor (which probes LIVE, later, against the finished PATH) reported it ✓. Same
+# shell, two answers. atuin's own installer writes ~/.atuin/bin and had the identical
+# hole, which is the severe one: no HAVE_ATUIN means `atuin init zsh` never runs, so
+# Ctrl+E is dead and no history is recorded behind a green doctor row.
+#
+# Hermetic, and it has to be: the box running this suite has its own cargo/go/atuin dirs
+# one way or the other, and neither arrangement can prove the other's. Each case pins HOME
+# to a purpose-built fixture and PATH to a stub dir holding nothing but real grep/head.
+#
+# CARGO_HOME/GOBIN/GOPATH are neutralised (passed EMPTY — `:-` treats empty as unset) in
+# every case that is not deliberately setting them. That is the same trap v4.13.2 fixed in
+# the blib_user_bindirs_on_path fixture below: the resolution is `${CARGO_HOME:-$HOME/...}`
+# precisely so a relocated dir still works, so a developer with CARGO_HOME exported in
+# their own shell retargets the lookup, the fixture's dir never lands, and the case reds a
+# perfectly healthy tree while no CI runner — none of which export it — ever sees it.
+UBHOME="$SANDBOX/ubhome"
+UBSYS="$SANDBOX/ubsys"
+mkdir -p "$UBSYS"
+ln -sf "$(command -v grep)" "$UBSYS/grep"
+ln -sf "$(command -v head)" "$UBSYS/head"
+_ub_fixture() { # _ub_fixture <reldir>:<tool> ... — fresh $UBHOME holding exactly these stubs
+  rm -rf "$UBHOME"
+  mkdir -p "$UBHOME"
+  local spec d n
+  for spec in "$@"; do
+    d="${spec%%:*}"
+    n="${spec##*:}"
+    mkdir -p "$UBHOME/$d"
+    # Answers --version and NOTHING else: `atuin init zsh` must emit no script, or
+    # _cache_eval would source the stub's chatter back into the shell.
+    printf '#!/bin/sh\n[ "$1" = --version ] && echo "%s 1.0.0"\nexit 0\n' "$n" >"$UBHOME/$d/$n"
+    chmod +x "$UBHOME/$d/$n"
+  done
+}
+
+# (a) THE REPORTED BUG: a cargo-installed tool is detected, aliased and wired.
+_ub_fixture .cargo/bin:procs
+ucheck "bindirs: a tool in ~/.cargo/bin sets HAVE_PROCS and gets its alias (#425)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; [[ -n \${HAVE_PROCS:-} && \${aliases[ps]} == procs ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (b) THE SEVERE ONE: atuin's own installer dir, whose miss silently loses history.
+_ub_fixture .atuin/bin:atuin
+ucheck "bindirs: a tool in ~/.atuin/bin sets HAVE_ATUIN (so atuin init zsh runs)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_ATUIN:-} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (c) RELOCATABLE: rustup honours $CARGO_HOME, so hard-coding ~/.cargo/bin would leave a
+# relocated box still undetected. NOTE there is no ~/.cargo/bin in this fixture at all —
+# the flag can only be set by resolving through the variable.
+_ub_fixture xdgcargo/bin:procs
+ucheck "bindirs: CARGO_HOME is honoured (a relocated cargo dir is still detected)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_PROCS:-} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME="$UBHOME/xdgcargo" GOBIN= GOPATH=
+
+# (d) go honours $GOBIN first.
+_ub_fixture gobin:xh
+ucheck "bindirs: GOBIN is honoured" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_XH:-} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN="$UBHOME/gobin" GOPATH=
+
+# (e) …then $GOPATH — which is a path LIST, and go writes to the FIRST entry's bin/.
+# Expanding "$GOPATH/bin" against /a:/b would probe a nonexistent "/a:/b/bin", so this
+# asserts BOTH that the first entry is used and that no such bogus entry is built.
+_ub_fixture gopath/bin:xh second/bin:gron
+ucheck "bindirs: GOPATH's FIRST entry is used, and no bogus /a:/b/bin entry is built" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_XH:-} && -z \${HAVE_GRON:-} && \$PATH != *'gopath:'* ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH="$UBHOME/gopath:$UBHOME/second"
+
+# (f) IDEMPOTENT: the guard is a containment test, so a second source must not duplicate.
+# Duplicates are not cosmetic — 00-tools.zsh is re-sourced by `core reload`, and an
+# unbounded PATH is a real leak over a long session.
+_ub_fixture .cargo/bin:procs .local/bin:eza
+ucheck "bindirs: sourcing twice adds each dir exactly once" \
+  "source '$TOOLS_FILE'; source '$TOOLS_FILE'; p=(\${(s.:.)PATH}); [[ \${#\${(M)p:#\$HOME/.cargo/bin}} == 1 && \${#\${(M)p:#\$HOME/.local/bin}} == 1 ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (g) Only dirs that EXIST are added — no phantom entries on a box without go or atuin.
+_ub_fixture .cargo/bin:procs
+ucheck "bindirs: directories that do not exist are never added to PATH" \
+  "source '$TOOLS_FILE'; [[ \$PATH != *'/go/bin'* && \$PATH != *'/.atuin/bin'* && \$PATH == *'/.cargo/bin'* ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (h) ORDER IS A DECISION, not an accident. Each existing dir is prepended, so the front of
+# PATH ends up in reverse list order: ~/.atuin/bin ahead of ~/.local/bin. That matches
+# lib/bootstrap-lib.sh's blib_user_bindirs_on_path, examples/atuin-daemon.service's
+# Environment=PATH, and the OS layers — inverting it here would silently change which
+# binary wins on a box holding atuin in both places.
+_ub_fixture .cargo/bin:procs .local/bin:eza .atuin/bin:atuin
+ucheck "bindirs: ~/.atuin/bin precedes ~/.local/bin, and all of them precede the old PATH" \
+  "source '$TOOLS_FILE'; p=(\${(s.:.)PATH}); [[ \${p[(i)\$HOME/.atuin/bin]} -lt \${p[(i)\$HOME/.local/bin]} && \${p[(i)\$HOME/.local/bin]} -lt \${p[(i)$UBSYS]} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (i) THE DISAGREEMENT ITSELF. The issue's symptom was not "no alias" but that core-doctor
+# and the flags answered differently about the same tool in the same shell. Assert they now
+# agree: the doctor says present AND Core wired it. Before the fix the first half passed and
+# the second failed, which is exactly the bug.
+_ub_fixture .cargo/bin:procs
+ucheck "bindirs: core-doctor and HAVE_PROCS now agree about a cargo-installed tool (#425)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \$j == *'\"procs\":true'* && -n \${HAVE_PROCS:-} && \${aliases[ps]} == procs ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH= CORE_NO_PAGER=1
+
+# ── ...and the same agreement for EVERY probed tool, not just the one that was reported ──
+# #447's point: the five bugs it collected were one defect sampled five times, and the reason
+# CI never caught any of them is that nothing asserted the two answers match. The check above
+# pins procs because procs is what #425 happened to be reported against; a sixth tool
+# packaged unusually would have walked straight past it. Generalise: for every tool
+# 00-tools.zsh probes, "the doctor says present" and "Core set the flag" must be the SAME
+# boolean. A disagreement in either direction is a bug — doctor=1/flag=0 is #425 exactly (a
+# green row for a tool Core never wired, so no alias, and for atuin no history recorded),
+# and doctor=0/flag=1 is the mirror (Core wired something the report calls absent).
+#
+# The tool -> flag mapping is READ OUT OF THE SOURCE, never restated here, so it cannot rot
+# and needs no hand-maintained table for the two irregular names (ast-grep -> HAVE_ASTGREP,
+# git-absorb -> HAVE_GIT_ABSORB). The `+` quantifiers matter: 00-tools.zsh aligns some
+# comments with two spaces, and a single-space regex silently drops those rows.
+#
+# Excluded BY CONSTRUCTION rather than by a skip list, which is why the pattern is anchored
+# to `^_have`: op has no _have line (the doctor probes it live), and fd/bat are set from
+# FD_BIN/BAT_BIN inside `if` blocks after resolving fdfind/batcat — all three are pinned by
+# their own tests above. Sourcing 20-aliases.zsh keeps this close to a real shell; the one
+# alias that shadows a row name (`alias fd=$FD_BIN`) is already outside the pair list.
+#
+# Pure zsh, no python3: the values are bare true/false against a quoted unique key, so a
+# substring test is exact — and unlike the check_dep neighbours this then runs everywhere
+# instead of skipping on a box without python3. $'\42' is a literal double quote, which
+# survives this bash layer without a thicket of backslashes.
+# NO env overrides and no fixture: this one wants the REAL box — real PATH, real tools,
+# whatever this runner happens to have installed. That is the whole point. It is only as
+# strong as the runner is populated, but it costs nothing on a bare one (everything absent,
+# everything unflagged, agreement holds) and it is the assertion that fails the moment a
+# tool arrives by a route detection misses.
+ucheck "core-doctor and every HAVE_* flag agree about the same box (#447)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'
+   j=\$(core-doctor --json); bad=(); n=0
+   for line in \${(f)\"\$(<'$TOOLS_FILE')\"}; do
+     [[ \$line =~ '^_have +([A-Za-z0-9_.-]+) +&& +(HAVE_[A-Z0-9_]+)=1' ]] || continue
+     t=\$match[1]; f=\$match[2]; (( n++ ))
+     [[ \$j == *\$'\\42'\$t\$'\\42'':true'* ]] && d=1 || d=0
+     [[ -n \${(P)f:-} ]] && h=1 || h=0
+     (( d == h )) || bad+=(\"\$t (doctor=\$d \$f=\$h)\")
+   done
+   (( n >= 30 )) || { print -r -- \"parsed only \$n tool->flag pairs out of 00-tools.zsh\"; exit 1; }
+   (( \${#bad} == 0 )) || { print -r -- \"doctor and HAVE_* disagree: \${(j:, :)bad}\"; exit 1; }" \
+  CORE_NO_PAGER=1
+# ── _core_is_wsl: one WSL predicate for the fleet (00-tools.zsh, #449) ───────────
+# Six OS layers each carried a byte-identical copy of this probe, and Core had the same fact
+# twice more (bash's blib_is_wsl, and a private copy inside bin/clip) with neither reachable
+# from zsh. Core owns it now, so it is Core's job to prove it — including the direction each
+# individual copy was never tested in at all.
+#
+# HERMETIC IN BOTH DIRECTIONS, which is the entire reason $CORE_PROC_VERSION exists. This
+# suite is developed on a WSL host and runs on non-WSL CI runners; against the real kernel
+# version file exactly ONE of the two answers is assertable on each machine, so without a
+# seam half the predicate would go untested everywhere and nobody would see the gap. Same
+# seam, same reason, as bin/clip's CLIP_PROC_VERSION at the top of this file.
+#
+# WSL_DISTRO_NAME= IS PASSED EXPLICITLY IN EVERY FILE-PATH CASE. The predicate reads the env
+# var FIRST, and a developer running this from inside WSL has it exported — so without the
+# neutralisation every case below would pass for the wrong reason, on the one machine most
+# likely to be running them. (The same trap the CARGO_HOME= neutralisation above documents.)
+WSLFIX="$SANDBOX/wsl"
+mkdir -p "$WSLFIX"
+printf 'Linux version 6.6.87.2-microsoft-standard-WSL2 (root@build) #1 SMP\n' >"$WSLFIX/wsl2"
+printf 'Linux version 4.4.0-19041-Microsoft (Microsoft@Microsoft.com) #488\n' >"$WSLFIX/wsl1"
+printf 'Linux version 6.1.0 (nobody@nowhere) WSL banner, no vendor marker\n' >"$WSLFIX/wslword"
+printf 'Linux version 5.15.0-generic (buildd@lcy02) #72-Ubuntu SMP\n' >"$WSLFIX/plain"
+
+# (a) The env var short-circuits — asserted by pointing the seam at the NON-WSL fixture, so
+# a predicate that consulted the file anyway would answer no and fail here.
+ucheck "_core_is_wsl: WSL_DISTRO_NAME alone answers yes (the version file is never consulted)" \
+  "source '$TOOLS_FILE'; _core_is_wsl" \
+  WSL_DISTRO_NAME=Ubuntu CORE_PROC_VERSION="$WSLFIX/plain"
+
+# (b)-(d) the file fallback, for a login that never inherited the env (su -, a unit, ssh cmd)
+ucheck "_core_is_wsl: the WSL2 marker in the version file is WSL" \
+  "source '$TOOLS_FILE'; _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl2"
+# WSL1 capitalises the vendor string. This is the case-fold (${_pv:l}), not a second pattern
+# — drop the fold and every WSL1 box silently reads as plain Linux.
+ucheck "_core_is_wsl: WSL1's capitalised marker is WSL (the case-fold, not a second pattern)" \
+  "source '$TOOLS_FILE'; _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl1"
+ucheck "_core_is_wsl: a bare wsl marker with no vendor string is WSL (the second pattern)" \
+  "source '$TOOLS_FILE'; _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wslword"
+
+# (e) THE NEGATIVE, which is the half no OS-layer copy could ever assert on its own box.
+ucheck "_core_is_wsl: a plain Linux version string is NOT WSL" \
+  "source '$TOOLS_FILE'; ! _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/plain"
+
+# (f) No version file at all — the macOS/BSD path, where this must be silent and cheap
+# rather than an error. Core runs on macOS; the six copies that moved here never did.
+ucheck "_core_is_wsl: no version file and no env is NOT WSL (the macOS path, no error)" \
+  "source '$TOOLS_FILE'; ! _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/absent"
+
+# (g)-(i) the memo. It is what makes a per-prompt caller free, so it is worth pinning that it
+# exists, that it is actually consulted, and that the documented escape re-probes.
+ucheck "_core_is_wsl: memoises the answer into _CORE_IS_WSL" \
+  "source '$TOOLS_FILE'; _core_is_wsl; [[ \$_CORE_IS_WSL == 1 ]]" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl2"
+ucheck "_core_is_wsl: the memo is honoured — a second call does not re-read the file" \
+  "source '$TOOLS_FILE'; _core_is_wsl; CORE_PROC_VERSION='$WSLFIX/plain'; _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl2"
+ucheck "_core_is_wsl: unset _CORE_IS_WSL forces a re-probe (the documented escape)" \
+  "source '$TOOLS_FILE'; _core_is_wsl; unset _CORE_IS_WSL; CORE_PROC_VERSION='$WSLFIX/plain'; ! _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl2"
+
+# (j) ZERO FORK, asserted the way the git exec-path suite asserts its own: a PATH holding
+# nothing but RECORDING stubs, and an empty call log. This is the guard that fails if someone
+# "simplifies" $(<file) into a `grep -qi` — which is exactly what the bash sibling does, and
+# what this deliberately does not, because it runs on every interactive shell and a caller may
+# put it in a hook. The log is truncated AFTER sourcing so the assertion is about the
+# predicate, not about what 00-tools does on the way in.
+WSLBIN="$SANDBOX/wslbin"
+mkdir -p "$WSLBIN"
+for _wc in cat grep head sed awk; do
+  printf '#!/bin/sh\necho "%s $*" >>"%s/calls"\nexit 0\n' "$_wc" "$WSLFIX" >"$WSLBIN/$_wc"
+  chmod +x "$WSLBIN/$_wc"
+done
+unset _wc
+ucheck "_core_is_wsl: reads the version file with no fork (no cat, no grep)" \
+  "source '$TOOLS_FILE'; : >|'$WSLFIX/calls'; _core_is_wsl; [[ ! -s '$WSLFIX/calls' ]]" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl2" PATH="$WSLBIN"
+
+# (k) It is Core→OS API, so unlike _have it must SURVIVE 00-tools.zsh. The OS layer calls it
+# at band 80; _have is unfunctioned at the end of that file and would not be there.
+ucheck "_core_is_wsl: survives 00-tools.zsh (Core→OS API), where _have does not" \
+  "source '$TOOLS_FILE'; (( \$+functions[_core_is_wsl] )) && (( ! \$+functions[_have] ))"
+
+# ── band placement of the four tool inits (#449) — structure, not behaviour ──────
+# Four decisions that BEHAVIOUR CANNOT SEE. Every one of them is silent when broken: the
+# shell still starts, no error is printed, and the damage shows up as a feature quietly not
+# working on a subset of hosts. Each assertion below therefore says WHAT breaks, not just
+# that a line moved, because the message is the only thing a future contributor will read
+# before deciding whether the constraint is real.
+PLUGINS_FILE="$HERE/zsh/45-plugins.zsh"
+# First-match line number. `grep -n | sed`, not `| head`: a file producer feeding an
+# early-exiting reader is exactly the SIGPIPE shape audit-core.sh §5d bans.
+_zln() { grep -nE "$2" "$1" | sed -n '1s/:.*//p'; } # _zln <file> <ere>
+_zsay() { if [[ -n "$2" ]]; then pass "band placement: $1"; else fail "band placement: $1"; fi; }
+
+_z_direnv_t="$(_zln "$TOOLS_FILE" '^_cache_eval[[:space:]]+direnv')"
+_z_direnv_p="$(_zln "$PLUGINS_FILE" '^_cache_eval[[:space:]]+direnv')"
+_z_mise="$(_zln "$TOOLS_FILE" '_cache_eval[[:space:]]+mise')"
+_z_carapace="$(_zln "$PLUGINS_FILE" '_cache_eval[[:space:]]+--salt.*carapace')"
+
+# (1) direnv stays at band 00. Band 45 is profile-gated (loader.zsh ceils `minimal` at 30)
+# while band 80 — where this used to live — always loads, so filing it under 45 stops .envrc
+# files loading on every minimal host and nothing anywhere says so.
+_zsay "direnv's hook is in 00-tools.zsh, not 45-plugins.zsh — band 45 is profile-gated (minimal ceils at 30), so .envrc loading would silently die on minimal hosts" \
+  "$([[ -n "$_z_direnv_t" && -z "$_z_direnv_p" ]] && echo ok)"
+
+# (2) …and the three completions stay at band 45, because they call compdef.
+_z_ok=1
+for _zt in gh uv ty; do
+  [[ -n "$(_zln "$PLUGINS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+  [[ -z "$(_zln "$TOOLS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+done
+unset _zt
+_zsay "gh/uv/ty are in 45-plugins.zsh, not 00-tools.zsh — they call compdef, which does not exist until 10-options.zsh has run compinit" "$_z_ok"
+
+# (3) …and AFTER carapace. carapace bridges a gh completion; the last compdef owns the
+# command, so this ordering is the only thing keeping gh's own completion in front of the
+# bridged one. It is the order they ran in at band 80, so it preserves behaviour.
+_z_ok=1
+for _zt in gh uv ty; do
+  _zl="$(_zln "$PLUGINS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")"
+  [[ -n "$_z_carapace" && -n "$_zl" ]] && (( _zl > _z_carapace )) || _z_ok=""
+done
+unset _zt _zl
+_zsay "gh/uv/ty are registered AFTER the carapace block — whichever compdef runs last owns the command, so moving them above it hands gh back to the bridged completion, silently" "$_z_ok"
+
+# (4) direnv after mise. Both PREPEND their hooks, so the one sourced last runs FIRST.
+_zsay "direnv is initialised AFTER mise — both PREPEND their hooks, so the one sourced last runs first; inverting this changes per-directory env resolution with no visible symptom" \
+  "$([[ -n "$_z_direnv_t" && -n "$_z_mise" ]] && (( _z_direnv_t > _z_mise )) && echo ok)"
+unset _z_direnv_t _z_direnv_p _z_mise _z_carapace _z_ok
 
 # ── git subcommands in git's exec-path: an honest doctor off $PATH (#424) ────
 # The Debian family packages a git SUBCOMMAND into git's exec-path (`git --exec-path`) and
@@ -8697,6 +9430,62 @@ if grep -q "chsh not found" "$SANDBOX/lsn.out"; then
   fail "'chsh not found' is on STDOUT (blib_say regression — the shell was NOT changed, it must warn)"
 else
   pass "'chsh not found' is NOT on stdout (no longer a blib_say status line)"
+fi
+
+# ── core_files_identical: the comparison that must not need diffutils ─────────
+# sync-core.sh and update-nvim-plugins.sh both asked "did that rewrite change anything"
+# with `cmp -s`, which needs diffutils. On a box without it, `command not found` is a
+# non-zero exit indistinguishable from "differs", so sync-core.sh counted every candidate
+# workflow as repointed (#572) and update-nvim-plugins.sh reported drift that did not
+# exist. Both now call core_files_identical, so pin both directions AND the property that
+# made the old shape fail: it must not depend on any binary outside git.
+_cfi="$(mktemp -d "$SANDBOX/cfi.XXXXXX")"
+printf 'alpha\nbeta\n' >"$_cfi/a"
+printf 'alpha\nbeta\n' >"$_cfi/b"
+printf 'alpha\nGAMMA\n' >"$_cfi/c"
+printf 'alpha\nbeta' >"$_cfi/d" # same bytes as a, minus the trailing newline
+
+if core_files_identical "$_cfi/a" "$_cfi/b"; then
+  pass "core_files_identical: identical files compare equal"
+else
+  fail "core_files_identical: identical files reported as differing"
+fi
+if core_files_identical "$_cfi/a" "$_cfi/c"; then
+  fail "core_files_identical: differing files reported as equal"
+else
+  pass "core_files_identical: differing files compare unequal"
+fi
+# The trailing-newline case is why this is a hash of the bytes and not `[[ $(cat a) == $(cat b) ]]`:
+# command substitution strips trailing newlines from BOTH sides, so a real one-byte
+# difference would compare equal and the rewrite would be skipped.
+if core_files_identical "$_cfi/a" "$_cfi/d"; then
+  fail "core_files_identical: a trailing-newline-only difference was missed (\$(cat) semantics leaked in)"
+else
+  pass "core_files_identical: a trailing-newline-only difference still counts as different"
+fi
+# A missing operand must read as "differs", so a caller that lost its temp file rewrites
+# rather than silently skipping.
+if core_files_identical "$_cfi/a" "$_cfi/nope"; then
+  fail "core_files_identical: a missing operand compared equal"
+else
+  pass "core_files_identical: a missing operand counts as different"
+fi
+# The regression itself: with diffutils absent it must still be correct. Run it with a
+# PATH holding only git, so any reintroduced cmp/diff call fails the way it did in #572.
+_cfi_git="$(command -v git)"
+_cfi_bin="$(mktemp -d "$SANDBOX/cfibin.XXXXXX")"
+ln -s "$_cfi_git" "$_cfi_bin/git"
+if PATH="$_cfi_bin" core_files_identical "$_cfi/a" "$_cfi/b" &&
+  ! PATH="$_cfi_bin" core_files_identical "$_cfi/a" "$_cfi/c"; then
+  pass "core_files_identical: correct on a PATH with git but no cmp/diff (the #572 box)"
+else
+  fail "core_files_identical: wrong answer without diffutils on PATH — the #572 regression is back"
+fi
+# And no caller may quietly go back to cmp.
+if grep -nE '(^|[|;&( ])cmp[[:space:]]+-' "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh 2>/dev/null | grep -v '^\s*#' | grep -q .; then
+  fail "a script calls cmp again — use core_files_identical (#572)"
+else
+  pass "no script calls cmp (diffutils stays optional)"
 fi
 
 # ── summary ───────────────────────────────────────────────────────────────────
