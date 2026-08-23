@@ -12,7 +12,6 @@
 #                    is a different risk profile from piping a URL to sh, and it is
 #                    presence-guarded, so packaging it would be harmless too.
 #   - mise         — no OSS package exists; mise.run stays its primary path.
-#   - tree-sitter-cli — genuinely unpackaged; cargo only.
 #
 # Listed here but flavor-dependent — the one entry that is neither purely packaged
 # nor purely bootstrap-installed:
@@ -46,10 +45,13 @@ fzf            # fuzzy finder
 git-delta      # git pager / diffs (binary: delta)
 btop           # top/htop
 tealdeer       # tldr (binary: tldr). Tumbleweed repo-oss only. NOT in Leap 16.0/16.1's
-               # primary repos — it shipped in 15.6, which is EOL. On Leap it lives in the
-               # `utilities` OBS repo (download.opensuse.org/repositories/utilities/16.0/),
-               # deliberately NOT auto-added — same call as Packman. So on Leap the zypper
-               # pass skips this name and bootstrap.sh cargo-builds the crate instead.
+               # primary repos — it shipped in 15.6, which is EOL. On Leap 16.0 it lives in
+               # the `utilities` OBS repo (download.opensuse.org/repositories/utilities/16.0/),
+               # deliberately NOT auto-added — same call as Packman. That repo builds it for
+               # 16.0 ONLY: its index lists 16.0/ plus three Factory flavors and no 16.1/
+               # (checked 2026-08-22, #113), so on 16.1 there is no OBS route at all and
+               # cargo is the only one. Either way the zypper pass skips this name on Leap
+               # and bootstrap.sh cargo-builds the crate instead.
 yazi           # terminal file manager (Core aliases y/fm, sets HAVE_YAZI).
                # Packaged deliberately. The old `cargo install --locked yazi-build`
                # installed the workspace's xtask build-runner (its only bin is named
@@ -58,10 +60,11 @@ yazi           # terminal file manager (Core aliases y/fm, sets HAVE_YAZI).
                # the corresponding bootstrap.sh block.
 
 # ── modern CLI extras (core-doctor set) ───────────────────────
-# All eight verified against the openSUSE OSS index (2026-08-08, #83) — each resolves
-# under the name written, so the old "verify on-box" hedge here is discharged. The
-# resilient zypper_install in bootstrap.sh still falls back to per-package installs, so
-# a name that's absent on an older Leap is skipped rather than aborting the run.
+# The first eight were verified against the openSUSE OSS index (2026-08-08, #83) and the
+# four after them on 2026-08-22 (#113) — each resolves under the name written, so the old
+# "verify on-box" hedge here is discharged. The resilient zypper_install in bootstrap.sh
+# still falls back to per-package installs, so a name that's absent on an older Leap is
+# skipped rather than aborting the run.
 dust           # du (disk usage)
 duf            # df (disk free)
 procs          # ps
@@ -70,16 +73,39 @@ gron           # greppable JSON
 glow           # markdown renderer
 gum            # shell-script UI toolkit
 xh             # HTTPie-like (HTTP client)
+yq             # YAML processor — mikefarah's Go v4 build (jq-for-YAML), 4.53.3 on all three
+               # targets. This used to be go-installed on the strength of a claim that is
+               # now false in BOTH halves: that the main OSS `yq` was kislyuk's Python yq (a
+               # DIFFERENT tool that ships a binary of the same name) and that mikefarah's
+               # only came from a personal OBS repo. Today repo-oss `yq` IS the Go build,
+               # and kislyuk's ships separately as `python313-yq`/`python314-yq` — so the
+               # name collision that argument rested on cannot happen on this distro.
+               # bootstrap.sh keeps its go-install as a fallback; that block's
+               # mikefarah-signature guard sees the packaged build and no-ops (#113).
+ouch           # one command to (un)pack tar/zip/7z/zst/... (TW 0.8.1, Leap 16.x 0.5.1).
+               # bootstrap.sh has no installer for it, so until this line there was NO
+               # automatic path to it at all — the gap core/PORTING-MATRIX.md's footnote
+               # 18 describes. Packaged-first makes it a one-line fix (#113).
+ast-grep       # AST-aware structural search/rewrite (TW 0.45.1, Leap 16.x 0.28.0). Binary
+               # is `ast-grep`; do NOT reach for the short `sg`, which collides with
+               # setgroups(1) — Core's footnote 11 has that autopsy. Same gap as ouch: no
+               # bootstrap installer, so this list is its only automatic path (#113).
+tree-sitter    # tree-sitter CLI. nvim-treesitter (pinned to `main`) compiles parsers on the
+               # box and needs the CLI at >= 0.26.1; openSUSE ships 0.26.8 on all three.
+               # NOTE THE NAME. openSUSE has no `tree-sitter-cli` package — that is the
+               # Arch/Alpine split name, and looking for it under that name is exactly how
+               # this list concluded "genuinely unpackaged" and cargo-built it instead. The
+               # CLI is in the BASE `tree-sitter` package; the shared library is what got
+               # split off, as `tree-sitter0_26`. Mac inverts this: there `tree-sitter` is
+               # the lib-only formula and `tree-sitter-cli` is the one you want.
+               # bootstrap.sh's cargo build stays as a presence-guarded fallback (#113).
 # Installed by bootstrap.sh, not packaged here:
-#   - go-installed:  yq (mikefarah), doggo (DNS), sesh (tmux)
+#   - go-installed:  doggo (DNS), sesh (tmux)
 #   - upstream rpm:  carapace (completions) — NOT go-installed; `go install` cannot work
 #                    for any version of it (replace directives + uncommitted generated
 #                    sources). See bootstrap.sh's carapace block, and
 #                    core/PORTING-MATRIX.md's carapace footnote ²⁷.
 #   - vendor repo:   op (1Password CLI, from 1Password's signed rpm repo)
-# yq is the mikefarah Go v4 build: stock `zypper in yq` does NOT reliably provide it —
-# the main OSS `yq` is kislyuk's SEPARATE `python-yq` (a different tool), and mikefarah's
-# Go build only ships from a personal OBS repo — so it's go-installed like doggo/sesh.
 
 # ── editor + git workflow ─────────────────────────────────────
 neovim
@@ -95,8 +121,10 @@ xclip          # X11 fallback (sessions / SSH X-forward)
 gcc
 gcc-c++        # some tree-sitter parsers ship C++ scanners
 make
-cargo          # rust toolchain -> builds tree-sitter-cli, viddy, and (on Leap) tealdeer.
+cargo          # rust toolchain -> builds viddy, and (on Leap 16.x) tealdeer.
                # NOT yazi: that is packaged now — see the yazi entry above.
+               # NOT tree-sitter either, as of #113: also packaged, and bootstrap.sh's
+               # cargo build of it is a presence-guarded fallback rather than the path.
 
 # ── python tooling ────────────────────────────────────────────
 # `python3-neovim` (pynvim) used to sit here under a "fix :checkhealth" heading, and it had
@@ -108,6 +136,12 @@ cargo          # rust toolchain -> builds tree-sitter-cli, viddy, and (on Leap) 
 python3-pip    # kept — pre-commit (CONTRIBUTING.md), `pip install ty`, ad-hoc tooling.
                # Note the system interpreter is PEP 668 externally-managed: a user-site
                # install needs --break-system-packages or a venv.
+               # This name is a CAPABILITY, not a package: no binary RPM is called
+               # `python3-pip` on TW or Leap 16.x. What installs is `python313-pip`, which
+               # Provides `python3-pip`. Harmless today, but the alias rides the PRIMARY
+               # python flavor — `python314-pip` already exists and provides only its own
+               # name — so it follows Factory when that flips. If `zypper in python3-pip`
+               # ever stops resolving, that is why; name the flavor explicitly (#113).
 # rust-analyzer  # uncomment if you use the Rust LSP (rustaceanvim wants it)
 # go             # uncomment for the Go LSP (gopls) + Go tooling
 
