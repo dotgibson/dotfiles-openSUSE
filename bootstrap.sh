@@ -406,9 +406,8 @@ provision() {
   #
   # `go install github.com/carapace-sh/carapace-bin/cmd/carapace@latest` cannot work, and
   # not for any version — two independent blockers, both properties of how the module is
-  # built rather than a break to wait out (core/PORTING-MATRIX.md's carapace
-  # footnote carries the full story and the evidence — numbered ²⁷ there, and it lands in
-  # this vendored copy with the next Core sync; until then see dotgibson/dotfiles-core#468):
+  # built rather than a break to wait out (core/PORTING-MATRIX.md's carapace footnote ²⁷,
+  # vendored in this tree, carries the full story and the evidence):
   #   1. Its go.mod carries `replace` directives (spf13/pflag → carapace-pflag,
   #      kevinburke/ssh_config → carapace-sh/ssh_config), and `go install pkg@version`
   #      refuses any module that does, because a replace would make the build differ from

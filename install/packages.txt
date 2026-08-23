@@ -104,8 +104,7 @@ tree-sitter    # tree-sitter CLI. nvim-treesitter (pinned to `main`) compiles pa
 #   - upstream rpm:  carapace (completions) — NOT go-installed; `go install` cannot work
 #                    for any version of it (replace directives + uncommitted generated
 #                    sources). See bootstrap.sh's carapace block, and
-#                    core/PORTING-MATRIX.md's carapace footnote (²⁷ there — it reaches this
-#                    vendored copy with the next Core sync; dotgibson/dotfiles-core#468).
+#                    core/PORTING-MATRIX.md's carapace footnote ²⁷.
 #   - vendor repo:   op (1Password CLI, from 1Password's signed rpm repo)
 
 # ── editor + git workflow ─────────────────────────────────────
