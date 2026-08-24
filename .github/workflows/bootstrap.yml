@@ -42,6 +42,13 @@ on:
       - 'wsl/**'
       - '.github/workflows/bootstrap.yml'
   workflow_dispatch:
+  # For packages-check ONLY, and it is the reason that job is worth having. A package
+  # rename or drop upstream breaks this repo's list with NOBODY having edited the repo,
+  # so a gate that fires only on pull_request cannot see the failure it exists to catch —
+  # it would go red on the next unrelated PR, blaming a change that did not cause it.
+  # Core's bootstrap-test.yml recommends pairing packages_check with a schedule for this.
+  schedule:
+    - cron: "17 6 * * 4"
 
 permissions:
   contents: read
@@ -58,3 +65,18 @@ jobs:
       # tripping `set -e` (prep runs under `sh -euc`), and the final `command -v zsh`
       # still fails LOUD if zsh genuinely can't be installed (no false green).
       prep: 'for i in 1 2 3 4 5; do if zypper --non-interactive --gpg-auto-import-keys refresh && zypper --non-interactive --gpg-auto-import-keys install bash zsh; then break; fi; echo "zypper prep attempt $i failed (mirror timeout?), retrying in $((i*10))s..." >&2; sleep $((i*10)); done; command -v zsh >/dev/null || { echo "zsh still not installed after 5 attempts" >&2; exit 1; }'
+      # Resolve every name in the package list against the real repos, downloading
+      # nothing. This is the blind spot provision_stub cannot cover: it stubs the
+      # package managers, so a WRONG PACKAGE NAME is invisible to it.
+      # `install --dry-run` resolves CAPABILITIES and installs nothing, which is the same
+      # question bootstrap.sh's `zypper install` asks — and that distinction is the whole
+      # correctness of the gate. `search --match-exact` matches package NAMES only, and
+      # rejected `python3-pip` on the first real run even though it installs fine (it is
+      # satisfied by a versioned python3XX-pip). A name-exact probe would red PRs over
+      # working packages. `zypper info` is the other trap: it prints "not found" for a
+      # bogus name but still EXITS 0 — a gate that can never fail.
+      # Verified in CI both directions: `bash` and `python3-pip` resolve, a bogus name is
+      # REJECTED (exit 104). prep already runs `zypper refresh`, so metadata is local.
+      packages_check: zypper --non-interactive install --dry-run
+      # packages_file is left at its default (install/packages.txt) — this repo's list
+      # needs no pre-filtering, unlike dotfiles-Debian's per-distro annotations.
