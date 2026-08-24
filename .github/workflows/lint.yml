@@ -5,12 +5,26 @@ name: lint
 # ~200-line copy this file used to carry. The gate's internals (the SHA-256-verified
 # pinned-tool bootstrap, the core/ exclude, shfmt-advisory) live there now. This repo has no
 # extra excludes (only Offense does), so no `with:` is needed.
+#
+# NO `paths-ignore`, and that is deliberate on two counts.
+#
+# IT DEADLOCKS A REQUIRED CHECK. GitHub treats the two kinds of skip very differently: a job
+# skipped by a job-level `if:` reports conclusion `skipped`, which a required check counts as
+# PASSING — but a workflow skipped by `paths-ignore` never creates its check runs AT ALL, so a
+# required context sits in "Expected — waiting for status" forever and the PR can never be
+# merged. A markdown-only PR here was exactly that: unmergeable, with nothing red to fix.
+# dotfiles-MacBook's ci.yml documents the same trap at length.
+#
+# AND IT DISABLED THE GATE IT WAS FILTERING FOR. lint-call.yml's markdown leg — blocking since
+# dotgibson/dotfiles-core#592 — lives inside THIS workflow. Ignoring `**.md` meant the one
+# file class that leg exists to check could never trigger it, so markdown was gated on every
+# change EXCEPT a change to markdown.
+#
+# Every other repo in the fleet had already dropped these filters; this was the last one.
 on:
   push:
     branches: [main, master]
-    paths-ignore: ["**.md", "LICENSE"]
   pull_request:
-    paths-ignore: ["**.md", "LICENSE"]
 
 concurrency:
   group: lint-${{ github.ref }}

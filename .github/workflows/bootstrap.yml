@@ -21,26 +21,15 @@ name: bootstrap
 # The two lists are duplicated rather than shared via a YAML anchor: GitHub Actions'
 # workflow parser does not reliably resolve anchors/aliases, and a filter that silently
 # fails to expand would skip the job entirely — the exact failure mode being fixed here.
+# NO TRIGGER-LEVEL PATH FILTER, deliberately — same reasoning as lint.yml. A workflow skipped
+# by `paths:` never produces a check run, so a required status check on it leaves every
+# non-matching PR stuck on "Expected — waiting for status". These jobs are cheap and always
+# run, which is what makes them safe to mark required. Six of the seven bootstrap-test callers
+# in the fleet had already dropped their filters.
 on:
   pull_request:
-    paths:
-      - 'bootstrap.sh'
-      - 'core/**'
-      - 'os/**'
-      - 'ssh/**'
-      - 'install/**'
-      - 'wsl/**'
-      - '.github/workflows/bootstrap.yml'
   push:
     branches: [main]
-    paths:
-      - 'bootstrap.sh'
-      - 'core/**'
-      - 'os/**'
-      - 'ssh/**'
-      - 'install/**'
-      - 'wsl/**'
-      - '.github/workflows/bootstrap.yml'
   workflow_dispatch:
   # For packages-check ONLY, and it is the reason that job is worth having. A package
   # rename or drop upstream breaks this repo's list with NOBODY having edited the repo,
