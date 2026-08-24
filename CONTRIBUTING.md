@@ -24,14 +24,14 @@ The `no-core-edits` pre-commit hook enforces this locally. A genuine
 
 Only what changes with the OS:
 
-| Path | Owns |
-| --- | --- |
-| `bootstrap.sh` | zypper provisioning + calling Core's link helpers |
-| `install/packages.txt` | openSUSE package names |
-| `os/opensuse.zsh` | clipboard, PATH, zypper aliases → `~/.config/zsh/80-os.zsh` |
-| `os/opensuse.conf` | tmux OS overlay → `~/.config/tmux/os.conf` |
-| `os/opensuse.gitconfig` | git OS overlay → `~/.config/git/os.gitconfig` |
-| `wsl/wsl.conf` | WSL systemd/user config (the ssh client config is Core's) |
+| Path                    | Owns                                                        |
+| ----------------------- | ----------------------------------------------------------- |
+| `bootstrap.sh`          | zypper provisioning + calling Core's link helpers           |
+| `install/packages.txt`  | openSUSE package names                                      |
+| `os/opensuse.zsh`       | clipboard, PATH, zypper aliases → `~/.config/zsh/80-os.zsh` |
+| `os/opensuse.conf`      | tmux OS overlay → `~/.config/tmux/os.conf`                  |
+| `os/opensuse.gitconfig` | git OS overlay → `~/.config/git/os.gitconfig`               |
+| `wsl/wsl.conf`          | WSL systemd/user config (the ssh client config is Core's)   |
 
 If it would be identical on every distro it belongs in Core. If it changes with the
 operator rather than the OS, it belongs in a role repo (`dotfiles-Offense`,
