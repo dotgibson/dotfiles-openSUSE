@@ -74,11 +74,11 @@ template per the [porting matrix][porting]. The full docs live on the
 
 The system is three layers, each building on the one below:
 
-| Layer | Lives in | Owns |
-| --- | --- | --- |
-| **Core** | [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core) → vendored into every OS repo's `core/` | zsh, tmux, nvim, git, starship — identical everywhere |
-| **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}` (this repo among them) | package manager, clipboard, paths |
-| **Role** | `dotfiles-Offense`, `dotfiles-Defense` | offensive / defensive tooling |
+| Layer         | Lives in                                                                                              | Owns                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **Core**      | [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core) → vendored into every OS repo's `core/` | zsh, tmux, nvim, git, starship — identical everywhere |
+| **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}` (this repo among them)         | package manager, clipboard, paths                     |
+| **Role**      | `dotfiles-Offense`, `dotfiles-Defense`                                                                | offensive / defensive tooling                         |
 
 ### Languages
 
@@ -123,14 +123,14 @@ Not sure what it will touch? Preview the whole plan first — this writes nothin
 ./bootstrap.sh --dry-run
 ```
 
-| Flag | Effect |
-| --- | --- |
-| `--dry-run` | Print every link/seed/backup that would happen; mutate nothing |
-| `--links-only` | Re-wire symlinks without touching `zypper` |
-| `--no-flatpak` | Skip the Flathub remote (already auto-skipped on WSL) |
-| `--only zsh,nvim` | Wire ONLY these Core module groups |
-| `--skip tmux` | Wire everything EXCEPT these groups |
-| `--tolerate-failures` | Exit 0 even if optional tools failed (for CI) |
+| Flag                  | Effect                                                         |
+| --------------------- | -------------------------------------------------------------- |
+| `--dry-run`           | Print every link/seed/backup that would happen; mutate nothing |
+| `--links-only`        | Re-wire symlinks without touching `zypper`                     |
+| `--no-flatpak`        | Skip the Flathub remote (already auto-skipped on WSL)          |
+| `--only zsh,nvim`     | Wire ONLY these Core module groups                             |
+| `--skip tmux`         | Wire everything EXCEPT these groups                            |
+| `--tolerate-failures` | Exit 0 even if optional tools failed (for CI)                  |
 
 Module groups: `zsh nvim tmux git prompt tools`. `--only` and `--skip` are mutually
 exclusive and affect wiring only, never package provisioning.
