@@ -229,6 +229,30 @@ zypper_install() {
   done
 }
 
+# _mise_bin — echo a usable `mise`, or nothing at all.
+#
+# mise.run drops its binary in ~/.local/bin. The SHELL layer prefixes that directory, but
+# THIS script never does — so a bare `command -v mise` is false for the mise the block
+# below installed moments earlier, and every Go fallback that probed that way skipped a
+# working toolchain and reported "needs a Go toolchain" on a box that had one. That is
+# what left doggo and sesh uninstalled on EVERY openSUSE bootstrap, exiting 2 forever,
+# invisible to CI until a genuinely unstubbed run looked (dotgibson/dotfiles-core#742).
+#
+# The mise install block already guards both ways (`command -v mise` OR the ~/.local/bin
+# path). This is that same two-armed test, factored out so the Go fallbacks cannot drift
+# from it again — the bug survived in the yq copy precisely because there were two.
+#
+# Echoes a PATH-resolved name or an absolute path; callers must invoke it as "$mise_bin",
+# never as a bare `mise`. Always returns 0: callers assign it under `set -e`.
+_mise_bin() {
+  if command -v mise >/dev/null 2>&1; then
+    command -v mise
+  elif [[ -x "$HOME/.local/bin/mise" ]]; then
+    printf '%s\n' "$HOME/.local/bin/mise"
+  fi
+  return 0
+}
+
 # Best-effort `go install` for tools not packaged on openSUSE. Presence-guarded
 # (skips if the binary already exists), tolerant of a missing Go toolchain, and
 # never aborts the run — but every failure is now recorded in the ledger.
@@ -239,11 +263,13 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
   # layer prefixes ~/.local/bin and ~/.cargo/bin). Force GOBIN into ~/.local/bin.
   local gobin="$HOME/.local/bin"
   mkdir -p "$gobin" 2>/dev/null || true
+  local mise_bin
+  mise_bin="$(_mise_bin)"
   if command -v go >/dev/null 2>&1; then
     GOBIN="$gobin" go install "$1" >/dev/null 2>&1 ||
       _note_fail "$2 — go install failed; retry: GOBIN=$gobin go install $1"
-  elif command -v mise >/dev/null 2>&1; then
-    GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 ||
+  elif [[ -n "$mise_bin" ]]; then
+    GOBIN="$gobin" "$mise_bin" exec go@latest -- go install "$1" >/dev/null 2>&1 ||
       _note_fail "$2 — go install failed; retry: GOBIN=$gobin go install $1"
   else
     _note_fail "$2 — needs a Go toolchain; install Go then: GOBIN=$gobin go install $1"
@@ -483,11 +509,13 @@ provision() {
     local yqpath="github.com/mikefarah/yq/v4@latest"
     mkdir -p "$yqbin" 2>/dev/null || true
     blib_say "yq (mikefarah Go build)"
+    local yq_mise
+    yq_mise="$(_mise_bin)"
     if command -v go >/dev/null 2>&1; then
       GOBIN="$yqbin" go install "$yqpath" >/dev/null 2>&1 ||
         _note_fail "yq — go install failed; retry: GOBIN=$yqbin go install $yqpath"
-    elif command -v mise >/dev/null 2>&1; then
-      GOBIN="$yqbin" mise exec go@latest -- go install "$yqpath" >/dev/null 2>&1 ||
+    elif [[ -n "$yq_mise" ]]; then
+      GOBIN="$yqbin" "$yq_mise" exec go@latest -- go install "$yqpath" >/dev/null 2>&1 ||
         _note_fail "yq — go install failed; retry: GOBIN=$yqbin go install $yqpath"
     else
       _note_fail "yq — needs a Go toolchain; install Go then: GOBIN=$yqbin go install $yqpath"
