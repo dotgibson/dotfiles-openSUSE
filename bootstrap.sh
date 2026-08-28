@@ -599,6 +599,23 @@ wire_links() {
   # loader + the default-login-shell switch all live in core/lib/bootstrap-lib.sh.
   blib_link_core "$DOTFILES" "$CONFIG"
   blib_link_os_layer "$DOTFILES" "$CONFIG" opensuse
+  # ── the capability declaration's TIER ────────────────────────────────────────
+  # blib_link_os_layer has just linked os/opensuse.capabilities, which is TUMBLEWEED's.
+  # This repo serves Leap too, and the two upgrade with different verbs — `dup` vs `up`,
+  # the mistake that half-updates a box and the reason Core carried a
+  # `grep -qi tumbleweed /etc/os-release` probe inside a portable module at all.
+  #
+  # A declaration is DATA and cannot probe, so the choice is made HERE, by the same test
+  # this script already runs above to decide which upgrade alias to advertise. That probe
+  # is correct in an OS repo and wrong in Core; this is where it belongs.
+  #
+  # Relink rather than branch the call above: blib_link_os_layer owns the default name,
+  # and overriding one destination afterwards keeps this repo out of Core's contract.
+  # blib_link honours BLIB_DRY, so --dry-run reports "would relink" and changes nothing.
+  if ! grep -qi tumbleweed /etc/os-release 2>/dev/null; then
+    blib_say "Leap detected — using the Leap capability declaration (zypper up, unattended upgrades permitted)"
+    blib_link "$DOTFILES/os/opensuse.leap.capabilities" "$CONFIG/zsh/os.capabilities"
+  fi
   # shellcheck disable=SC2119  # no args is intentional — writes the default module set
   blib_write_zshrc_loader
   blib_set_login_shell

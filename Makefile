@@ -26,7 +26,7 @@ SH_FILES    := bootstrap.sh
 ZSH_FILES   := $(wildcard os/*.zsh)
 
 .DEFAULT_GOAL := help
-.PHONY: help lint lint-sh lint-zsh lint-actions check-core core-lock bootstrap-dry test
+.PHONY: help lint lint-sh lint-zsh lint-actions check-core core-lock bootstrap-dry test capabilities
 
 help: ## Show this help
 	@echo "dotfiles-openSUSE — local targets:"
@@ -35,7 +35,7 @@ help: ## Show this help
 	@echo
 	@echo "  Pre-push gate: make test"
 
-lint: lint-sh lint-zsh lint-actions ## Run every linter (shellcheck + zsh -n + actionlint)
+lint: lint-sh lint-zsh lint-actions capabilities ## Run every linter (shellcheck + zsh -n + actionlint)
 
 lint-sh: ## ShellCheck the repo-owned bash (uses ./.shellcheckrc)
 	@if command -v shellcheck >/dev/null 2>&1; then \
@@ -124,3 +124,23 @@ bootstrap-dry: ## Preview every symlink bootstrap would create; mutates nothing
 test: lint check-core ## The pre-push gate: lint + core integrity
 	@echo
 	@echo ":: all local checks passed"
+
+# ── the OS capability declaration (Core v5, #663/#667) ────────────────────────
+# ONE definition of the schema gates all seven declaring repos: the validator is
+# core/scripts/check-capabilities.sh, vendored with Core, so a schema change arrives
+# with the next sync instead of needing seven hand-written greps to be updated in
+# step. Core's own `make audit` runs the same script over its shipped example and
+# sweeps the fleet for these files; this is the local half of that gate.
+#
+# The glob is guarded because an unmatched glob stays LITERAL in sh — without the
+# test this would "validate" a file named `os/*.capabilities` and pass on nothing,
+# which is the failure mode a gate must never have.
+capabilities: ## Validate os/*.capabilities against Core's schema
+	@rc=0; found=0; \
+	for f in os/*.capabilities; do \
+	  [ -e "$$f" ] || continue; found=1; \
+	  core/scripts/check-capabilities.sh "$$f" --packages install/packages.txt || rc=1; \
+	done; \
+	if [ "$$found" -eq 0 ]; then echo "!! no os/*.capabilities — this repo must declare one (see core/examples/os.capabilities.example)"; rc=1; fi; \
+	exit $$rc
+

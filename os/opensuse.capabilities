@@ -1,0 +1,80 @@
+# os/opensuse.capabilities — the openSUSE TUMBLEWEED capability declaration
+# (Core v5, #663/#667).
+# ──────────────────────────────────────────────────────────────────────────────
+# Read (never sourced) by Core's zsh/02-capabilities.zsh into $_CORE_CAP, and by
+# maint/dotfiles-maint.sh, which is bash. bootstrap.sh links it to
+# $ZDOTDIR/os.capabilities via blib_link_os_layer.
+#
+# Transcribed from core/PORTING-MATRIX.md §"Package-manager commands", openSUSE column.
+# Validate with:  core/scripts/check-capabilities.sh os/opensuse.capabilities
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# THIS FILE IS TUMBLEWEED'S. LEAP'S IS os/opensuse.leap.capabilities.
+# ══════════════════════════════════════════════════════════════════════════════
+# ONE REPO SERVES TWO DISTRIBUTIONS THAT UPGRADE WITH DIFFERENT VERBS, and getting it
+# wrong half-updates the box — it is the reason Core carried a
+# `grep -qi tumbleweed /etc/os-release` probe in a portable module at all.
+#
+# A declaration is DATA: it cannot probe, so the choice has to be made somewhere. It
+# is made in bootstrap.sh, which already reads /etc/os-release to decide which upgrade
+# alias to advertise, and now relinks $ZDOTDIR/os.capabilities to the Leap file on a
+# non-Tumbleweed box. Tumbleweed is the default because it is what this repo primarily
+# targets; a Leap box gets the other file, and a Leap→Tumbleweed migration is a
+# re-bootstrap, which it already is for every other reason.
+#
+# TUMBLEWEED IS THE DEFAULT BUT THE FILES ARE NOT INTERCHANGEABLE. Two keys differ,
+# and both differences are load-bearing — see PKG_UPGRADE and the scheduled-runner
+# section below. Keep the rest in step by hand; there is deliberately no generator.
+#
+# A `#` INSIDE A VALUE IS NOT A COMMENT — the reader keeps it. Notes go above.
+
+# ── package-manager verbs (all required) ──────────────────────────────────────
+PKG_REFRESH=sudo zypper refresh
+# `dup`, NOT `up` — THE FIRST OF THE TWO KEYS THAT DIFFER FROM THE LEAP FILE.
+# Tumbleweed is rolling and upgrades as a distribution; `zypper up` on it holds
+# packages back and leaves a box in a state neither dialect describes.
+PKG_UPGRADE=sudo zypper dup
+PKG_INSTALL=sudo zypper in
+PKG_REMOVE=sudo zypper rm
+PKG_SEARCH=zypper se
+PKG_OWNS=zypper se --provides
+PKG_COUNT_PENDING=zypper -q list-updates
+
+# ── scheduler (required) ──────────────────────────────────────────────────────
+SCHEDULER=systemd
+SCHEDULER_UNIT_DIR=~/.config/systemd/user
+
+# ── how `up` applies ──────────────────────────────────────────────────────────
+PKG_ASSUME_YES=-y
+# `dup` HAS NO MEANINGFUL PER-PACKAGE FORM, so a partial upgrade here is `up` — which
+# is what a Tumbleweed `up -i` has always done. This is the one place the two dialects
+# legitimately meet.
+PKG_UPGRADE_PARTIAL=sudo zypper up
+# NO PKG_UPGRADE_PRE: `dup` refreshes as part of the transaction.
+# NO PKG_CLEANUP: zypper does not accumulate the way apt and brew do.
+
+# ── how `up` counts ───────────────────────────────────────────────────────────
+# `zypper list-updates` prints a PIPE-DELIMITED table: the `v` status column, then
+# repository, then the package name in field 3. This is the only archive in the fleet
+# whose output is not whitespace-separated.
+PKG_PENDING_MATCH=^v[[:space:]]
+PKG_PENDING_FS=|
+PKG_PENDING_FIELD=3
+
+# ── the scheduled runner ──────────────────────────────────────────────────────
+# NO MAINT_UNATTENDED_UPGRADE — THE SECOND KEY THAT DIFFERS FROM THE LEAP FILE, and
+# the reason the tier split is not only about spelling the verb.
+#
+# The flag drives PKG_UPGRADE, which here is `dup`. Declaring it would turn a nightly
+# package update into an unattended DISTRIBUTION upgrade on a rolling distro — the
+# exact hazard that keeps Arch and Gentoo from declaring it. That is also an ESCALATION
+# from what this box does today: Core's untethered maint arm ran
+# `zypper --non-interactive up` on any zypper box, never `dup`.
+#
+# Leap is versioned and upgrades with `up`, so it declares the flag. Apply with `up`.
+
+# ── optional tools ────────────────────────────────────────────────────────────
+# NO TOOLS_OPTIN. PORTING-MATRIX.md's ²¹ cells show openSUSE PACKAGES jj and ast-grep,
+# the two tools that are opt-in on Gentoo and the Debian family — so there is no delta
+# from Core's _CORE_DOCTOR_OPTIN default, and a declared list REPLACES that default
+# rather than adding to it, so a copy here could only drift.
