@@ -24,9 +24,14 @@ CORE_REMOTE ?= https://github.com/dotgibson/dotfiles-core.git
 # Repo-owned shell only; core/ is excluded everywhere on purpose.
 SH_FILES    := bootstrap.sh
 ZSH_FILES   := $(wildcard os/*.zsh)
+# Unlike the two above, this is `git ls-files` rather than a literal or a wildcard: it is
+# the exact pathspec lint-call.yml's markdown leg uses, so `make lint-md` scans what the
+# blocking gate scans. A wildcard would be one directory deep and miss anything under
+# .github/, which is the scope defect found across the fleet (dotgibson/dotfiles-core#775).
+MD_FILES    := $(shell git ls-files '*.md' ':!:core/**')
 
 .DEFAULT_GOAL := help
-.PHONY: help lint lint-sh lint-zsh lint-actions check-core core-lock bootstrap-dry test capabilities
+.PHONY: help lint lint-sh lint-zsh lint-actions lint-md check-core core-lock bootstrap-dry test capabilities
 
 help: ## Show this help
 	@echo "dotfiles-openSUSE — local targets:"
@@ -35,13 +40,16 @@ help: ## Show this help
 	@echo
 	@echo "  Pre-push gate: make test"
 
-lint: lint-sh lint-zsh lint-actions capabilities ## Run every linter (shellcheck + zsh -n + actionlint)
+lint: lint-sh lint-zsh lint-actions lint-md capabilities ## Run every linter (shellcheck + zsh -n + actionlint + markdownlint)
 
+# `&&` before the ok, not `;`. With a semicolon the echo ran regardless and became the
+# line's exit status, so shellcheck could print a screen of findings and this target still
+# reported "ok" and exited 0 — a gate that cannot fail. lint-zsh (`|| exit 1`) and
+# lint-actions (`&&`) were already correct; this arm was the only one that was not.
 lint-sh: ## ShellCheck the repo-owned bash (uses ./.shellcheckrc)
 	@if command -v shellcheck >/dev/null 2>&1; then \
 	  echo ":: shellcheck $(SH_FILES)"; \
-	  shellcheck -x $(SH_FILES); \
-	  echo "   ok"; \
+	  shellcheck -x $(SH_FILES) && echo "   ok"; \
 	else \
 	  echo "!! shellcheck not installed — skipping (zypper in ShellCheck)"; \
 	fi
@@ -60,6 +68,18 @@ lint-actions: ## actionlint the workflow callers
 	  echo ":: actionlint .github/workflows"; actionlint && echo "   ok"; \
 	else \
 	  echo "!! actionlint not installed — skipping (CI still enforces it)"; \
+	fi
+
+# Markdown had no local gate at all, while lint-call.yml's markdown leg has been BLOCKING
+# since dotgibson/dotfiles-core#592 — a required check nobody could run before pushing, and
+# a .markdownlint.jsonc only CI ever read. Skips like its siblings above; the message names
+# CI as the remaining gate rather than implying coverage.
+lint-md: ## markdownlint the repo-owned docs (ShellCheck and zsh -n never read markdown)
+	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
+	  echo ":: markdownlint-cli2 $(words $(MD_FILES)) file(s)"; \
+	  markdownlint-cli2 $(MD_FILES) && echo "   ok"; \
+	else \
+	  echo "!! markdownlint-cli2 not installed — skipping (npm i -g markdownlint-cli2; CI still enforces it)"; \
 	fi
 
 check-core: ## Verify vendored core/ matches the commit core.lock pins (mirrors CI's guard / integrity)
