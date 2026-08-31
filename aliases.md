@@ -1,6 +1,6 @@
 # openSUSE Aliases Cheat Sheet
 
-OS-specific aliases from `os/opensuse.zsh`. See [`core/aliases.md`](core/aliases.md)
+OS-specific aliases from `os/opensuse.zsh`. See dotfiles-core's [`aliases.md`](https://github.com/dotgibson/dotfiles-core/blob/main/aliases.md)
 for the universal aliases reference (modern CLI, git, safety nets) that applies on every machine.
 
 > **Tumbleweed vs Leap:** Use `zdup` for Tumbleweed (rolling distribution upgrade),

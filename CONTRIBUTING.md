@@ -5,7 +5,8 @@ This is the **OS-native layer** for openSUSE in a three-tier system
 this repo versus upstream in [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core).
 
 For the shared Core rules — the load order, the "is it Core?" test, the manifest
-contract — see `core/README.md` and `core/CONTRIBUTING.md`.
+contract — see dotfiles-core's [`README.md`](https://github.com/dotgibson/dotfiles-core/blob/main/README.md) and
+[`CONTRIBUTING.md`](https://github.com/dotgibson/dotfiles-core/blob/main/CONTRIBUTING.md), upstream rather than in `core/`.
 
 ## The rule that bites
 
