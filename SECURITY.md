@@ -9,8 +9,8 @@ Private vulnerability reporting is enabled on this repository — use
 That opens a private advisory visible only to the maintainer.
 
 If the issue affects shared configuration rather than the openSUSE layer, report it
-against [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core) instead — see
-`core/SECURITY.md` for the fleet-wide policy. When in doubt, report here and it will be
+against [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core) instead — see its
+[`SECURITY.md`](https://github.com/dotgibson/dotfiles-core/blob/main/SECURITY.md) for the fleet-wide policy. When in doubt, report here and it will be
 routed.
 
 ## What this repository is
