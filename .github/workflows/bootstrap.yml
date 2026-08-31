@@ -44,7 +44,7 @@ permissions:
 
 jobs:
   test:
-    uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v5
+    uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v6
     with:
       image: opensuse/tumbleweed
       # openSUSE Tumbleweed's OSS mirror (cdn.opensuse.org) intermittently times out
