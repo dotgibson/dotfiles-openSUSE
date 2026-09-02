@@ -5,7 +5,12 @@
 # maint/dotfiles-maint.sh, which is bash. bootstrap.sh links it to
 # $ZDOTDIR/os.capabilities via blib_link_os_layer.
 #
-# Transcribed from core/PORTING-MATRIX.md §"Package-manager commands", openSUSE column.
+# THE SOURCE of the "Package-manager commands" table in dotfiles-core's
+# PORTING-MATRIX.md, openSUSE column
+# (its Leap half; opensuse.capabilities is the Tumbleweed half) —
+# the table is rendered from this file since dotfiles-core#686 (this checkout's vendored
+# core/ copy may predate that and still say the reverse): edit here, then run
+# `make gen-porting-matrix` in dotfiles-core.
 # Validate with:  core/scripts/check-capabilities.sh os/opensuse.leap.capabilities
 #
 # ══════════════════════════════════════════════════════════════════════════════
