@@ -66,6 +66,24 @@ jobs:
       # bogus name but still EXITS 0 — a gate that can never fail.
       # Verified in CI both directions: `bash` and `python3-pip` resolve, a bogus name is
       # REJECTED (exit 104). prep already runs `zypper refresh`, so metadata is local.
-      packages_check: zypper --non-interactive install --dry-run
+      #
+      # --allow-downgrade (#149). The image and the repo are published INDEPENDENTLY: the
+      # container is built in OBS against Factory and pushed to Docker Hub hours before the
+      # same snapshot reaches download.opensuse.org. In that window the image is AHEAD of
+      # the repo the probe resolves against (2026-09-02: image at 20260901 with glibc 2.44,
+      # mirrors still serving 20260830 with glibc 2.43, for ~4.5 h). Any name that reaches
+      # `glibc-devel` — which pins `glibc = <exact version>` — then only resolves by
+      # downgrading the installed glibc, and `install` refuses downgrades by default:
+      #   Problem: the to be installed gcc-16-1.1 requires 'gcc16', but this requirement
+      #   cannot be provided ... Solution 1: downgrade of glibc-2.44-1.1 to glibc-2.43-4.3
+      # exit 4, reported as UNRESOLVED. gcc (-> gcc16 -> glibc-devel), gcc-c++ (-> gcc) and
+      # cargo (-> rust1.98 -> gcc + glibc-devel) are the three names in the list that reach
+      # it; the other 44 kept resolving, which is the fingerprint of this skew vs. a rename.
+      # The flag only widens what the solver may do to packages ALREADY INSTALLED in this
+      # throwaway container; the gate's question is unchanged and a bogus name still exits
+      # 104. NOT --force-resolution: that lets the solver pick ANY solution, including
+      # "do not install gcc", i.e. a false green. NOT `zypper dup` in prep: it downloads a
+      # snapshot's worth of packages into all three jobs to answer a resolve-only question.
+      packages_check: zypper --non-interactive install --dry-run --allow-downgrade
       # packages_file is left at its default (install/packages.txt) — this repo's list
       # needs no pre-filtering, unlike dotfiles-Debian's per-distro annotations.
