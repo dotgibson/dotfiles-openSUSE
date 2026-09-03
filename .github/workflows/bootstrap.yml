@@ -46,7 +46,32 @@ jobs:
   test:
     uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v6
     with:
-      image: opensuse/tumbleweed
+      # PINNED TO A DATED SNAPSHOT TAG (#150). The Docker Hub `opensuse/tumbleweed` repo has
+      # exactly one tag, `latest`, and it is rebuilt daily from Factory and pushed HOURS before
+      # the same snapshot reaches download.opensuse.org (#149: 2026-09-02, image at 20260901,
+      # mirrors still at 20260830). Following `latest` meant every PR — including a comment-only
+      # one — resolved against a moving image/mirror pair it had not changed. A dated tag from
+      # registry.opensuse.org (the build's own registry; Docker Hub `latest` is a copy of it,
+      # label org.opencontainers.image.version=20260901.37.150) pins the container to ONE
+      # snapshot. Between bumps the container is then only ever AT OR BEHIND the mirror, and
+      # behind resolves as an upgrade, which `install --dry-run` allows by default. The one
+      # place the image can still be AHEAD of the mirror is the bump PR itself, and that is the
+      # right place for a skew to show up (see --allow-downgrade below, which keeps it green).
+      #
+      # BUMPED BY RENOVATE: the `with: image:` input is invisible to Renovate's github-actions
+      # manager (it reads `uses:` only), so renovate.json carries a custom regex manager for
+      # this line — weekly on the fleet schedule, automerged once this workflow is green.
+      # The registry PRUNES date tags after ~6 weeks (20260718..20260901 were listed on
+      # 2026-09-02). If every PR suddenly fails with `manifest unknown`, a bump PR sat unmerged
+      # past that window: merge or refresh the bump, do not hand-edit this line to `latest`.
+      #
+      # TAG, NOT DIGEST: a date tag is rebuilt within its snapshot (20260830 had three builds)
+      # but every rebuild carries the same VERSION_ID, which is the unit the probe cares about;
+      # a digest pin would only add PRs that change nothing. Core's check-modern digest rule
+      # governs Core's own workflows, not caller inputs (dotfiles-Alpine passes `alpine:3.24`).
+      # The reusable's `docker run "$IMAGE"` and Core's fleet-bootstrap-matrix.py (the weekly
+      # real-bootstrap sweep) take this registry-qualified ref verbatim.
+      image: registry.opensuse.org/opensuse/tumbleweed:20260901
       # openSUSE Tumbleweed's OSS mirror (cdn.opensuse.org) intermittently times out
       # in CI (curl error 28), and a single `zypper install` has no retry, so one slow
       # fetch fails the whole links-only job (zsh "no provider" -> exit 104). Retry the
@@ -84,6 +109,10 @@ jobs:
       # 104. NOT --force-resolution: that lets the solver pick ANY solution, including
       # "do not install gcc", i.e. a false green. NOT `zypper dup` in prep: it downloads a
       # snapshot's worth of packages into all three jobs to answer a resolve-only question.
+      # STILL NEEDED after the image pin above (#150): with a pinned tag the skew can no longer
+      # reach an unrelated PR, but the Renovate bump PR moves the tag to a snapshot the mirror
+      # may not serve yet, and this flag is what lets that PR resolve and automerge instead
+      # of going red until the mirror catches up.
       packages_check: zypper --non-interactive install --dry-run --allow-downgrade
       # packages_file is left at its default (install/packages.txt) — this repo's list
       # needs no pre-filtering, unlike dotfiles-Debian's per-distro annotations.

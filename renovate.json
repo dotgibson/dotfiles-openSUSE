@@ -1,4 +1,28 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>dotgibson/.github"]
+  "extends": ["local>dotgibson/.github"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The bootstrap CI image is a reusable-workflow INPUT (`with: image:` in .github/workflows/bootstrap.yml), which the github-actions manager cannot see (it reads `uses:` only). Bump the dated Tumbleweed snapshot tag from registry.opensuse.org (#150). The regex versioning admits only pure YYYYMMDD tags, so `latest` and the per-build `20260901.37.150` tags are ignored.",
+      "managerFilePatterns": ["/^\\.github/workflows/bootstrap\\.yml$/"],
+      "matchStrings": [
+        "image:\\s*(?<depName>registry\\.opensuse\\.org/opensuse/tumbleweed):(?<currentValue>\\d{8})\\b"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "regex:^(?<major>\\d{8})$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Date-tag bumps for the Tumbleweed CI image: ci(bootstrap) commits, no digest (rebuilds within a snapshot share VERSION_ID, so a digest PR changes nothing the probe cares about), and automerge once the bootstrap gate itself is green — the registry prunes date tags after ~6 weeks, so a bump PR left sitting would eventually fail every PR with `manifest unknown`.",
+      "matchDatasources": ["docker"],
+      "matchDepNames": ["registry.opensuse.org/opensuse/tumbleweed"],
+      "semanticCommitType": "ci",
+      "semanticCommitScope": "bootstrap",
+      "pinDigests": false,
+      "automerge": true,
+      "automergeType": "pr"
+    }
+  ]
 }
