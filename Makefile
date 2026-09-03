@@ -182,7 +182,11 @@ lint-md: ## markdownlint the repo-owned docs (ShellCheck and zsh -n never read m
 # CORE_REF points at that checkout. Empty (the default) auto-resolves: beside this
 # directory, then beside the MAIN checkout, which is what finds it from a git worktree
 # (`../dotfiles-core` from .claude/worktrees/<name> resolves inside the worktrees dir, and
-# worktrees are routine here).
+# worktrees are routine here). The main checkout is `git rev-parse --git-common-dir` (which
+# is `<main>/.git`, NOT the per-worktree `--git-dir` of `.git/worktrees/<name>`) with two
+# levels stripped — resolved to an absolute path FIRST via `cd … && pwd`, because git may
+# return that dir relative, and a lexical `/../../` on a relative `.git` would climb out of
+# the wrong directory.
 core-verify: ## Verify vendored core/ matches the commit core.lock pins (mirrors CI's guard / integrity)
 	@set -uo pipefail; \
 	test -r core.lock || { echo "!! core.lock missing"; exit 1; }; \
@@ -202,7 +206,9 @@ core-verify: ## Verify vendored core/ matches the commit core.lock pins (mirrors
 	echo "   core/ has no local edits"; \
 	ref="$(CORE_REF)"; \
 	if [ -z "$$ref" ]; then \
-	  for c in "$(CURDIR)/../dotfiles-core" "$$(git rev-parse --git-common-dir 2>/dev/null)/../../dotfiles-core"; do \
+	  gcd="$$(git rev-parse --git-common-dir 2>/dev/null)"; \
+	  [ -n "$$gcd" ] && gcd="$$(cd "$$gcd" 2>/dev/null && pwd)"; \
+	  for c in "$(CURDIR)/../dotfiles-core" $${gcd:+"$$gcd/../../dotfiles-core"}; do \
 	    if [ -x "$$c/scripts/core-integrity.sh" ]; then ref="$$(cd "$$c" && pwd)"; break; fi; \
 	  done; \
 	fi; \
