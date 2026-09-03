@@ -181,7 +181,7 @@ This is an **OS-native layer**, so the contribution rule is a boundary rule:
    it belongs in Core; if it changes with the operator, it belongs in a role repo.
 3. **Green the lint gate.** This repo's CI runs shellcheck + `bash -n` / `zsh -n`
    on the repo-owned shell (the vendored `core/` is excluded — it is gated
-   upstream). Run `make test` before pushing to get the same answer locally.
+   upstream). Run `make check` before pushing to get the same answer locally.
 
 Full details, including the Windows checkout caveat and the local gate, are in
 **[CONTRIBUTING.md](CONTRIBUTING.md)**. Security policy: **[SECURITY.md](SECURITY.md)**.

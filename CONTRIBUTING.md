@@ -41,14 +41,23 @@ operator rather than the OS, it belongs in a role repo (`dotfiles-Offense`,
 ## Before you push
 
 ```bash
-make test
+make check
 ```
 
 That runs the same checks CI does: ShellCheck + `bash -n` on the repo-owned bash,
-`zsh -n` on `os/*.zsh`, `actionlint` on the workflow callers, and `make check-core`
-(the local mirror of CI's `guard / integrity` — it verifies `core/` still matches the
-commit `core.lock` pins). Linters that aren't installed are skipped with a warning
-rather than failing, so a partial toolchain still gives useful output.
+`zsh -n` on `os/*.zsh`, `actionlint` on the workflow callers, `make core-verify` (the
+local mirror of CI's `guard / integrity` — it verifies `core/` still matches the commit
+`core.lock` pins) and, on an openSUSE box, a hermetic `--links-only` run against a
+throwaway `HOME`. Linters that aren't installed are skipped with a warning rather than
+failing, so a partial toolchain still gives useful output.
+
+`check`, `lint`, `dry-run`, `packages-check` and `core-verify` are five of the seven
+canonical verbs every repo that vendors Core answers to — declared once in
+`dotfiles-core`'s `scripts/make-vocabulary.txt`, so a target means the same thing in
+every repo in the fleet
+([dotgibson/dotfiles-core#691](https://github.com/dotgibson/dotfiles-core/issues/691)).
+`make test` and `make check-core` still work as aliases. The seventh verb, `test`, is
+reserved for this repo's own suite once it has one; it is an alias of `check` until then.
 
 Optional but recommended:
 

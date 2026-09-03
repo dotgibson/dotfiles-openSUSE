@@ -13,13 +13,16 @@
 #
 # Scope note: this repo owns bootstrap.sh, os/, install/, ssh/, wsl/ and .github/.
 # core/ is vendored and is NEVER linted or edited here — it is gated upstream in
-# dotfiles-core by `make audit`, and guarded here by `make check-core`.
+# dotfiles-core by `make audit`, and guarded here by `make core-verify`.
 
 # A real executable path: make execs SHELL directly and does NOT word-split it, so
 # `/usr/bin/env bash` would be looked up as a single filename and fail. openSUSE always
 # ships /bin/bash.
 SHELL       := /bin/bash
-CORE_REMOTE ?= https://github.com/dotgibson/dotfiles-core.git
+# A dotfiles-core CHECKOUT — core-verify delegates the vendored-tree comparison to Core's
+# own scripts/core-integrity.sh there, the same script CI runs. Defaults to a sibling
+# clone, the layout sync-core.sh assumes.
+CORE_REPO ?= $(CURDIR)/../dotfiles-core
 
 # Repo-owned shell only; core/ is excluded everywhere on purpose.
 SH_FILES    := bootstrap.sh
@@ -31,14 +34,14 @@ ZSH_FILES   := $(wildcard os/*.zsh)
 MD_FILES    := $(shell git ls-files '*.md' ':!:core/**')
 
 .DEFAULT_GOAL := help
-.PHONY: help lint lint-sh lint-zsh lint-actions lint-md check-core core-lock bootstrap-dry test capabilities
+.PHONY: help lint lint-sh lint-zsh lint-actions lint-md check core-verify check-core core-lock dry-run bootstrap-dry packages-check test capabilities
 
 help: ## Show this help
 	@echo "dotfiles-openSUSE — local targets:"
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 	@echo
-	@echo "  Pre-push gate: make test"
+	@echo "  Pre-push gate: make check"
 
 lint: lint-sh lint-zsh lint-actions lint-md capabilities ## Run every linter (shellcheck + zsh -n + actionlint + markdownlint)
 
@@ -82,7 +85,26 @@ lint-md: ## markdownlint the repo-owned docs (ShellCheck and zsh -n never read m
 	  echo "!! markdownlint-cli2 not installed — skipping (npm i -g markdownlint-cli2; CI still enforces it)"; \
 	fi
 
-check-core: ## Verify vendored core/ matches the commit core.lock pins (mirrors CI's guard / integrity)
+core-verify: ## Verify vendored core/ matches the commit core.lock pins (mirrors CI's guard / integrity)
+	@# THE TREE COMPARISON IS DELEGATED, and it has to be. This target used to answer it
+	@# here: fetch core_sha treeless, then `git rev-parse HEAD:core` vs `$$sha^{tree}`. That
+	@# was correct only while a vendored core/ was the WHOLE upstream tree. Since
+	@# dotgibson/dotfiles-core#676 the fan-out materializes a FILTERED subset —
+	@# `core.manifest` ∪ `core.vendor`, ~0.9 MB of Core instead of 5.6 MB of repo — so the
+	@# two hashes can never agree again, and this printed `!! MISMATCH` on a pristine tree.
+	@# Verified both ways at core v6.1.0: this said MISMATCH while Core's own
+	@# scripts/core-integrity.sh said `pristine`, and CI (core-integrity-call.yml, which runs
+	@# that script) was green throughout. A local gate that reds a clean tree is worse than
+	@# no local gate: it teaches you to ignore it.
+	@#
+	@# So the expected tree is computed by the ONE implementation that knows how the fan-out
+	@# builds it — Core's script, from a dotfiles-core CHECKOUT, which is also how CI invokes
+	@# it. Rebuilding the filter here would be a second implementation to keep in step, which
+	@# is the mistake `core-lock` below already explains at length.
+	@#
+	@# The three checks ABOVE the comparison stay local: they need no network and no Core
+	@# checkout, and each catches a different botch (a missing lock, a sync that moved core/
+	@# without core.version, a hand-edit sitting uncommitted).
 	@set -euo pipefail; \
 	test -r core.lock || { echo "!! core.lock missing"; exit 1; }; \
 	ver="$$(sed -n 's/^core_version=//p' core.lock)"; \
@@ -99,20 +121,18 @@ check-core: ## Verify vendored core/ matches the commit core.lock pins (mirrors 
 	  git diff --stat HEAD -- core/; exit 1; \
 	fi; \
 	echo "   core/ has no local edits"; \
-	vend="$$(git rev-parse 'HEAD:core')"; \
-	if ! git rev-parse --verify --quiet "$$sha^{tree}" >/dev/null; then \
-	  echo ":: fetching pinned commit from $(CORE_REMOTE) (treeless)"; \
-	  git fetch --quiet --depth=1 --filter=tree:0 "$(CORE_REMOTE)" "$$sha" || { \
-	    echo "!! could not fetch $$sha — offline? local checks above still passed"; exit 1; }; \
-	fi; \
-	exp="$$(git rev-parse --verify "$$sha^{tree}")"; \
-	if [ "$$vend" = "$$exp" ]; then \
-	  echo "   tree matches upstream: $$vend"; echo ":: core integrity OK"; \
+	if [ -x "$(CORE_REPO)/scripts/core-integrity.sh" ]; then \
+	  "$(CORE_REPO)/scripts/core-integrity.sh" --self "$(CURDIR)"; \
 	else \
-	  echo "!! MISMATCH  vendored=$$vend  expected=$$exp"; \
-	  echo "   Fix upstream in dotfiles-core, then 'make sync' there. Never hand-edit core/."; \
-	  exit 1; \
+	  echo "-- no dotfiles-core checkout at CORE_REPO=$(CORE_REPO) — the tree comparison is SKIPPED"; \
+	  echo "   (clone it beside this repo, or: make core-verify CORE_REPO=/path/to/dotfiles-core)"; \
+	  echo "   CI still runs it on every PR: .github/workflows/core-integrity.yml"; \
 	fi
+
+# This repo's historical spelling for the target above, kept so anything already calling
+# it — muscle memory, a local script, the docs' older lines — keeps working. See the
+# vocabulary note at `check`.
+check-core: core-verify ## (alias) the pre-#691 spelling of core-verify
 
 core-lock: ## Explain why core.lock is NOT regenerated here (it is written by Core's fan-out)
 	@echo "core.lock is not regenerated in this repo."
@@ -138,12 +158,83 @@ core-lock: ## Explain why core.lock is NOT regenerated here (it is written by Co
 	@echo "Then verify this repo with:  make check-core"
 
 
-bootstrap-dry: ## Preview every symlink bootstrap would create; mutates nothing
-	./bootstrap.sh --links-only --dry-run
+# ── the canonical fleet verbs (dotgibson/dotfiles-core#691) ───────────────────
+# `check`, `dry-run`, `packages-check` and `core-verify` are four of the seven names every
+# repo that vendors Core must answer to (Core's scripts/make-vocabulary.txt; `make
+# fleet-vocabulary` there renders the register that checks it). Before that list, "dry run"
+# was spelled two ways across nine repos and "verify core" five — only `help` was common to
+# every Makefile, so a contributor re-learned the verbs in each repo and no gate noticed.
+# The requirement is that the CANONICAL name exists, not that a historical one dies.
 
-test: lint check-core ## The pre-push gate: lint + core integrity
+dry-run: ## Preview a FULL bootstrap (packages + symlinks); mutates nothing
+	@./bootstrap.sh --dry-run
+
+# The old spelling previewed the SYMLINKS only (`--links-only --dry-run`). It now runs the
+# full preview, which is a strict superset: `--dry-run` alone skips provisioning with a
+# "(dry run) would provision …" line and still plans every link, and neither form writes
+# anything or needs root.
+bootstrap-dry: dry-run ## (alias) the pre-#691 spelling of dry-run
+
+check: lint core-verify ## The pre-push gate: lint + core integrity + a hermetic --links-only run
+	@# What `make test` used to be, plus the third leg the fleet's `check` promises. `lint`
+	@# proves the repo-owned shell parses and `core-verify` proves the vendored subtree is
+	@# the one core.lock pins; this proves the installer still wires the symlink graph Core's
+	@# loader expects — into a throwaway HOME, so it is safe on a live box.
+	@#
+	@# openSUSE ONLY: bootstrap.sh reads /etc/os-release and refuses anywhere else, by
+	@# design. Off openSUSE this fails with that message rather than reporting a green it did
+	@# not earn; the container equivalent runs from .github/workflows/bootstrap.yml.
+	@#
+	@# tpm is pre-created because blib_link_core clones the tmux plugin manager into it on a
+	@# first run; this asserts symlinks, not network.
+	@tmp=$$(mktemp -d); \
+	mkdir -p "$$tmp/.config/tmux/plugins/tpm"; \
+	echo ":: bootstrap --links-only into $$tmp"; \
+	HOME="$$tmp" ./bootstrap.sh --links-only >/dev/null || { echo "!! bootstrap failed"; rm -rf "$$tmp"; exit 1; }; \
+	rc=0; \
+	for l in .config/zsh/loader.zsh .config/zsh/80-os.zsh .config/starship.toml \
+	         .config/lazygit/config.yml .config/nvim .vimrc .gitconfig; do \
+	  test -L "$$tmp/$$l" || { echo "!! MISSING symlink: $$l"; rc=1; }; \
+	done; \
+	test -e "$$tmp/.config/zsh/loader.zsh" || { echo "!! loader.zsh is dangling"; rc=1; }; \
+	test -f "$$tmp/.config/sesh/sesh.toml" || { echo "!! sesh.toml not seeded"; rc=1; }; \
+	test -L "$$tmp/.config/sesh/sesh.toml" && { echo "!! sesh.toml must be a copy, not a link"; rc=1; }; \
+	grep -q "dotfiles-managed v4" "$$tmp/.zshrc" || { echo "!! ~/.zshrc not managed"; rc=1; }; \
+	grep -q "source .*loader.zsh" "$$tmp/.zshrc" || { echo "!! ~/.zshrc does not source the loader"; rc=1; }; \
+	rm -rf "$$tmp"; \
+	test $$rc -eq 0 || exit 1; \
+	echo "   symlink graph OK"
 	@echo
 	@echo ":: all local checks passed"
+
+# `test` is the fleet's name for THE REPO'S OWN SUITE — a test/ directory CI runs — and
+# this repo does not have one yet. Until it does, this stays an alias of the pre-push
+# gate so nothing typing `make test` breaks; Core's register reports it as a no-op beside
+# a `no-dir` floor, which is the accurate signal and the reason the suite is owed. That is
+# the test-floor half of dotgibson/dotfiles-core#691.
+test: check ## (alias) the pre-push gate, until this repo owns a test/ suite
+
+packages-check: ## Do all install/packages.txt names still resolve against zypper?
+	@# The local half of what bootstrap.yml's packages_check leg asks in a Tumbleweed
+	@# container, with the same command and the same --allow-downgrade, for the reason that
+	@# workflow records: gcc, gcc-c++ and cargo reach glibc-devel, which pins an exact glibc
+	@# and only resolves by downgrading the installed one — without the flag those three
+	@# report UNRESOLVED on a container whose glibc has skewed, which is a false accusation
+	@# rather than a rename. NOT --force-resolution: that lets the solver answer "do not
+	@# install gcc", i.e. a false green.
+	@command -v zypper >/dev/null 2>&1 || { echo "!! zypper not found — run this on openSUSE (CI covers it: .github/workflows/bootstrap.yml)"; exit 1; }
+	@test "$$(id -u)" = 0 || { echo "!! needs root — zypper resolves against the system database and requires it even for --dry-run"; echo "   try: sudo make packages-check"; exit 1; }
+	@set -e; \
+	pkgs=$$(sed 's/#.*//' install/packages.txt | tr -d '[:blank:]' | grep -v '^$$'); \
+	test -n "$$pkgs" || { echo "!! no packages parsed from install/packages.txt"; exit 1; }; \
+	echo ":: resolving $$(echo "$$pkgs" | wc -l) package names (nothing is downloaded or installed)"; \
+	rc=0; \
+	for p in $$pkgs; do \
+	  zypper --non-interactive install --dry-run --allow-downgrade "$$p" >/dev/null 2>&1 || { echo "   UNRESOLVED: $$p"; rc=1; }; \
+	done; \
+	test $$rc -eq 0 && echo ":: all package names resolve" || \
+	  echo "^^ renamed or dropped upstream — fix install/packages.txt, or add a presence-guarded fallback in bootstrap.sh"; \
+	exit $$rc
 
 # ── the OS capability declaration (Core v5, #663/#667) ────────────────────────
 # ONE definition of the schema gates all seven declaring repos: the validator is
