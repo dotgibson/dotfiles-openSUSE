@@ -158,6 +158,8 @@ prompt — comes from vendored Core; this repo owns the openSUSE specifics:
 - `bootstrap.sh` — `zypper` provision + Core/OS symlink wiring (idempotent)
 - `install/packages.txt` — the `zypper` package list (modern CLI stack)
 - `os/opensuse.zsh` — clipboard + package-manager aliases → `~/.config/zsh/80-os.zsh`
+- `test/` — the repo's own suite: is the package list still installable, and do the
+  Tumbleweed and Leap capability declarations still differ in only the two ways they may?
 - `core/` — vendored from `dotfiles-core` (read-only here; edit upstream)
 
 The things that actually bite on openSUSE — the Tumbleweed `dup` vs Leap `up`
@@ -181,7 +183,8 @@ This is an **OS-native layer**, so the contribution rule is a boundary rule:
    it belongs in Core; if it changes with the operator, it belongs in a role repo.
 3. **Green the lint gate.** This repo's CI runs shellcheck + `bash -n` / `zsh -n`
    on the repo-owned shell (the vendored `core/` is excluded — it is gated
-   upstream). Run `make test` before pushing to get the same answer locally.
+   upstream), plus this repo's own suite in `test/`. Run `make test` before pushing
+   to get the same answer locally.
 
 Full details, including the Windows checkout caveat and the local gate, are in
 **[CONTRIBUTING.md](CONTRIBUTING.md)**. Security policy: **[SECURITY.md](SECURITY.md)**.
