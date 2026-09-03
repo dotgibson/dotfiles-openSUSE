@@ -47,10 +47,12 @@ make test
 
 That runs the same checks CI does: ShellCheck + `bash -n` on the repo-owned bash,
 `zsh -n` on `os/*.zsh`, `actionlint` on the workflow callers, `make core-verify`
-(the local mirror of CI's `guard / integrity` — it verifies `core/` still matches the
-commit `core.lock` pins), and `make suite`, this repo's own tests. Linters that aren't
-installed are skipped with a warning rather than failing, so a partial toolchain still
-gives useful output.
+(the local mirror of CI's `guard / integrity` — it runs Core's own `core-integrity.sh`
+against a sibling `dotfiles-core` checkout to verify `core/` still matches the commit
+`core.lock` pins; without that checkout it checks what it can offline and defers the tree
+comparison to CI), and `make suite`, this repo's own tests. Linters that aren't installed
+are skipped with a warning rather than failing, so a partial toolchain still gives useful
+output.
 
 The target names come from Core, not from here: `scripts/make-vocabulary.txt` in
 `dotfiles-core` declares one `make` vocabulary — `help lint check dry-run

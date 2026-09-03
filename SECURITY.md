@@ -69,7 +69,10 @@ PR that removes it — that publicises the leak while leaving it in history.
   That is a **movable tag**: whoever controls the tag controls this repository's CI.
 - `core/` is vendored and content-pinned by `core.lock`; the `core-integrity` workflow
   verifies the vendored tree hash against the pinned commit on every PR, and
-  `make core-verify` reproduces that check locally (`make check-core` is kept as an alias).
+  `make core-verify` reproduces it locally by running Core's own `core-integrity.sh` — the
+  same script CI's `guard / integrity` runs — against a sibling `dotfiles-core` checkout. Without
+  one it verifies what it can offline (no hand-edits, versions agree) and defers the tree comparison
+  to CI. (`make check-core` is kept as an alias.)
 - Dependabot security updates and CodeQL are enabled.
 
 ## Supported versions
