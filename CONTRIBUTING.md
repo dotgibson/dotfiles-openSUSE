@@ -33,6 +33,7 @@ Only what changes with the OS:
 | `os/opensuse.conf`      | tmux OS overlay → `~/.config/tmux/os.conf`                  |
 | `os/opensuse.gitconfig` | git OS overlay → `~/.config/git/os.gitconfig`               |
 | `wsl/wsl.conf`          | WSL systemd/user config (the ssh client config is Core's)   |
+| `test/*.sh`             | the repo's own suite — run by `make suite`, and by CI       |
 
 If it would be identical on every distro it belongs in Core. If it changes with the
 operator rather than the OS, it belongs in a role repo (`dotfiles-Offense`,
@@ -45,10 +46,29 @@ make test
 ```
 
 That runs the same checks CI does: ShellCheck + `bash -n` on the repo-owned bash,
-`zsh -n` on `os/*.zsh`, `actionlint` on the workflow callers, and `make check-core`
+`zsh -n` on `os/*.zsh`, `actionlint` on the workflow callers, `make core-verify`
 (the local mirror of CI's `guard / integrity` — it verifies `core/` still matches the
-commit `core.lock` pins). Linters that aren't installed are skipped with a warning
-rather than failing, so a partial toolchain still gives useful output.
+commit `core.lock` pins), and `make suite`, this repo's own tests. Linters that aren't
+installed are skipped with a warning rather than failing, so a partial toolchain still
+gives useful output.
+
+The target names come from Core, not from here: `scripts/make-vocabulary.txt` in
+`dotfiles-core` declares one `make` vocabulary — `help lint check dry-run
+packages-check core-verify test` — for every repo that vendors it
+(dotgibson/dotfiles-core#691), so the verbs mean the same thing in all of them. The two
+targets this repo renamed to reach it keep their old spellings as aliases, so
+`make check-core` and `make bootstrap-dry` still work.
+
+Two more worth knowing:
+
+```bash
+make check           # lint + a hermetic --links-only bootstrap into a throwaway HOME
+make packages-check  # do all install/packages.txt names still resolve? (installs nothing)
+```
+
+`make check` is the only local gate that actually executes `wire_links` — `make lint`
+only parses it. It needs an openSUSE host (`bootstrap.sh` refuses to run off-distro) and
+skips with a note elsewhere; CI runs it in a pinned container either way.
 
 Optional but recommended:
 

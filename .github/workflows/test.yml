@@ -1,0 +1,66 @@
+name: test
+
+# The repo's own suite (`test/`), run by `make suite`.
+#
+# WHY A NEW WORKFLOW AND NOT A LEG OF AN EXISTING ONE. Every other workflow here is a
+# thin caller of a reusable in dotfiles-core — a `uses:` job cannot carry a `run:` step,
+# so there was nowhere to run a repo-owned script. This repo had no `test/` directory at
+# all until dotgibson/dotfiles-core#691 set a floor for the fleet: a suite with at least
+# one script, run from CI. Five of nine repos were under it, dotfiles-Fedora — the
+# template every Linux repo including this one is stamped from — among them.
+#
+# `make suite`, NOT `make test`. The pre-push gate `make test` is lint + core-verify +
+# the suite, and the first two already have their own blocking workflows here (lint.yml
+# and core-integrity.yml, both reusable callers). Running the aggregate target would pay
+# for the same shellcheck, markdownlint, actionlint and core-integrity fetch a second
+# time on every PR to report the same answer.
+#
+# UBUNTU, NOT THE PINNED openSUSE CONTAINER. Both scripts are written so their
+# repo-reading half is true on any host: check-flavors.sh compares the two capability
+# declarations and needs no package manager at all, and check-packages.sh does its
+# hygiene checks anywhere and cleanly skips the live `zypper install --dry-run` where
+# there is no zypper. The AUTHORITATIVE package resolve is bootstrap.yml's
+# packages-check job, which runs per-name in the pinned Tumbleweed snapshot on a cron as
+# well as on PRs, so pulling that image again here would buy a second answer to a
+# question already gated — and a slower, weaker one.
+#
+# NO PATH FILTER, deliberately, for the reason lint.yml and secrets.yml both record at
+# length: a workflow skipped by `paths:` never creates its check runs at all, so a
+# required status check on it leaves every non-matching PR stuck on "Expected — waiting
+# for status" with nothing red to fix. This job is seconds long and always runs, which
+# is what makes it safe to mark required.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: suite (test/)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # SHA-pinned (v5) rather than tag-pinned, matching secrets.yml: a mutable tag means
+      # whoever controls it controls this workflow.
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      # The suite reads core/lib/bootstrap-lib.sh — the same parser bootstrap.sh feeds
+      # zypper — so a checkout whose subtree is missing must fail LOUD rather than
+      # resolve zero packages green. Both scripts exit 1 on that; this makes the reason
+      # legible in the log before make does.
+      - name: Sanity — the vendored core/ is present
+        run: test -r core/lib/bootstrap-lib.sh
+
+      - name: make suite
+        run: make suite

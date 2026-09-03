@@ -26,4 +26,13 @@ What belongs **here** is only the OS-native layer: the `zypper` package list, cl
 - `os/opensuse.conf`, `os/opensuse.gitconfig` — tmux + git OS overlays
 - `install/packages.txt` — openSUSE package names
 - `bootstrap.sh` — symlinks Core + OS files into place
+- `test/` — the repo's own suite (`make suite`, and `.github/workflows/test.yml`):
+  package-list hygiene/resolution, and the Tumbleweed-vs-Leap capability split
 - `core/` — vendored Core (read-only here; edit upstream in dotfiles-core)
+
+## `make` verbs are Core's, not this repo's
+
+Core declares one vocabulary for every repo that vendors it (`scripts/make-vocabulary.txt`,
+dotfiles-core#691): `help lint check dry-run packages-check core-verify test`. Do not
+rename or invent a verb here — a repo-local spelling turns that repo's register cell
+**missing**. `make check-core` and `make bootstrap-dry` survive as aliases.
