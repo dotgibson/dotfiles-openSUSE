@@ -3,7 +3,11 @@
 # Before this existed there was no way to validate the repo short of running
 # ./bootstrap.sh for real against your own machine, and core.lock's own header told
 # you to run `make core-lock` — a target that did not exist here. These targets
-# mirror what CI actually runs, so local == CI.
+# mirror what CI actually runs, so local == CI — and where a check cannot be reproduced
+# from a bare checkout it says so and defers to CI rather than answering a different
+# question: `check`'s hermetic run needs an openSUSE host, and `core-verify`'s tree
+# comparison needs a dotfiles-core clone (it runs Core's own script, the same one CI's
+# `guard / integrity` runs). Neither degrades silently.
 #
 # That header instruction was itself the bug: dotgibson/dotfiles-core#454 found no such
 # target existed anywhere and removed the line, because core.lock is written by
@@ -30,6 +34,9 @@
 # ships /bin/bash.
 SHELL       := /bin/bash
 CORE_REMOTE ?= https://github.com/dotgibson/dotfiles-core.git
+# The dotfiles-core checkout `core-verify` compares against. Empty = auto-resolve; see the
+# comment on that target for why the comparison is delegated rather than done here.
+CORE_REF    ?=
 
 # Repo-owned shell only; core/ is excluded everywhere on purpose.
 # `git ls-files`, not the literal `bootstrap.sh` this used to be: that spelling was
@@ -131,8 +138,53 @@ lint-md: ## markdownlint the repo-owned docs (ShellCheck and zsh -n never read m
 	  echo "!! markdownlint-cli2 not installed — skipping (npm i -g markdownlint-cli2; CI still enforces it)"; \
 	fi
 
+# THE TREE COMPARISON IS DELEGATED TO CORE, and that is a correction, not a preference.
+#
+# This target used to answer the question itself: compare `git rev-parse HEAD:core` against
+# `git rev-parse "$core_sha^{tree}"`. That is the whole ROOT tree of the pinned Core commit
+# (294 files) versus this repo's vendored subtree (185), and since dotgibson/dotfiles-core#676
+# a commit carrying `core.vendor` is vendored as `core.manifest` ∪ `core.vendor` — not as its
+# whole tree. So the two could never be equal, and the target reported
+#
+#     !! MISMATCH  vendored=2b5665e4afe6  expected=f416232f9abe
+#
+# on a PRISTINE tree, on every clean checkout, for everyone. It was not a slow or partial
+# gate; it was a confident false accusation of tampering, and it took `make test` — the
+# documented pre-push gate — red with it.
+#
+# WHY NOT REBUILD THE FILTERED TREE HERE. Because "pristine" would then have two
+# definitions, which is strictly worse than the second `core.lock` generator that
+# `core-lock` below exists to refuse. Core's core_vendor_tree (scripts/lib/core-vendor.sh)
+# is ~55 lines carrying four separate hard-won corrections — resolve to the repo root first
+# or `update-index --index-info` reads its paths against the cwd prefix and silently returns
+# git's EMPTY tree with status 0; GIT_INDEX_FILE must be absolute or the index lands inside
+# the repo; `mktemp -d` plus `$dir/index`, never a bare mktemp, because git errors on a
+# zero-length index; and an empty tree from a non-empty keeplist must be rejected as the
+# signature of a filter that matched nothing. Its own comments record that a vendored copy
+# run as `core/scripts/core-integrity.sh --self` hit the first of those and "reported every
+# repo TAMPERED against an empty expectation". Re-deriving that in a make recipe, `$$` and
+# all, is how this repo would earn those four bugs a second time.
+#
+# So the comparison runs Core's script — literally the same file CI runs
+# (core-integrity-call.yml checks out dotfiles-core at full depth and calls
+# `scripts/core-integrity.sh --self`), which makes local == CI by construction rather than
+# by agreement.
+#
+# WHAT THAT COSTS: a sibling dotfiles-core checkout. The old self-contained form needed
+# none — it fetched the pinned commit treeless from CORE_REMOTE — but that independence was
+# only ever apparent, since what it computed offline was wrong. A check that needs a clone
+# and says so beats one that runs anywhere and lies. The three LOCAL invariants below still
+# need neither clone nor network, and they catch the two failures a human actually causes:
+# a hand-edit under core/, and a botched sync. Absent the clone the tree comparison SKIPS
+# with a notice naming CI, exactly as lint-actions and lint-md do for a missing tool — a
+# missing local reference is a fact about this machine, not a finding about the repo.
+#
+# CORE_REF points at that checkout. Empty (the default) auto-resolves: beside this
+# directory, then beside the MAIN checkout, which is what finds it from a git worktree
+# (`../dotfiles-core` from .claude/worktrees/<name> resolves inside the worktrees dir, and
+# worktrees are routine here).
 core-verify: ## Verify vendored core/ matches the commit core.lock pins (mirrors CI's guard / integrity)
-	@set -euo pipefail; \
+	@set -uo pipefail; \
 	test -r core.lock || { echo "!! core.lock missing"; exit 1; }; \
 	ver="$$(sed -n 's/^core_version=//p' core.lock)"; \
 	sha="$$(sed -n 's/^core_sha=//p' core.lock)"; \
@@ -148,20 +200,27 @@ core-verify: ## Verify vendored core/ matches the commit core.lock pins (mirrors
 	  git diff --stat HEAD -- core/; exit 1; \
 	fi; \
 	echo "   core/ has no local edits"; \
-	vend="$$(git rev-parse 'HEAD:core')"; \
-	if ! git rev-parse --verify --quiet "$$sha^{tree}" >/dev/null; then \
-	  echo ":: fetching pinned commit from $(CORE_REMOTE) (treeless)"; \
-	  git fetch --quiet --depth=1 --filter=tree:0 "$(CORE_REMOTE)" "$$sha" || { \
-	    echo "!! could not fetch $$sha — offline? local checks above still passed"; exit 1; }; \
+	ref="$(CORE_REF)"; \
+	if [ -z "$$ref" ]; then \
+	  for c in "$(CURDIR)/../dotfiles-core" "$$(git rev-parse --git-common-dir 2>/dev/null)/../../dotfiles-core"; do \
+	    if [ -x "$$c/scripts/core-integrity.sh" ]; then ref="$$(cd "$$c" && pwd)"; break; fi; \
+	  done; \
 	fi; \
-	exp="$$(git rev-parse --verify "$$sha^{tree}")"; \
-	if [ "$$vend" = "$$exp" ]; then \
-	  echo "   tree matches upstream: $$vend"; echo ":: core integrity OK"; \
-	else \
-	  echo "!! MISMATCH  vendored=$$vend  expected=$$exp"; \
-	  echo "   Fix upstream in dotfiles-core, then 'make sync' there. Never hand-edit core/."; \
-	  exit 1; \
-	fi
+	if [ -z "$$ref" ] || [ ! -x "$$ref/scripts/core-integrity.sh" ]; then \
+	  echo "!! no dotfiles-core checkout found — skipping the tree comparison (CI still enforces it)"; \
+	  echo "   The pinned core_sha only resolves in Core's own object store, so the comparison"; \
+	  echo "   needs one:  git clone $(CORE_REMOTE) ../dotfiles-core"; \
+	  echo "   Elsewhere already?  make core-verify CORE_REF=/path/to/dotfiles-core"; \
+	  exit 0; \
+	fi; \
+	echo ":: reference: $$ref"; \
+	if ! git -C "$$ref" cat-file -e "$$sha" 2>/dev/null; then \
+	  echo ":: locked core_sha is not in that clone yet — fetching (a stale reference reports"; \
+	  echo "   UNVERIFIABLE, which reads like tampering but only means 'fetch Core')"; \
+	  git -C "$$ref" fetch --quiet "$(CORE_REMOTE)" "$$sha" 2>/dev/null || \
+	    git -C "$$ref" fetch --quiet origin 2>/dev/null || true; \
+	fi; \
+	"$$ref/scripts/core-integrity.sh" --self "$(CURDIR)"
 
 # The historical spelling. Core's vocabulary needs `core-verify` to RESOLVE here, not
 # this name to die — SECURITY.md, CONTRIBUTING.md and .env.example all said `check-core`
