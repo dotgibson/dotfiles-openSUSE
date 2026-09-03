@@ -37,13 +37,36 @@ CORE_REMOTE ?= https://github.com/dotgibson/dotfiles-core.git
 # being true the moment test/ arrived — the CI gate lints `git ls-files '*.sh'
 # ':!:core/**'`, so a literal here silently lints less than the blocking gate does,
 # which is the one direction this Makefile must never drift in.
-SH_FILES    := $(shell git ls-files '*.sh' ':!:core/**')
+#
+# THE GIT LIST CAN COME BACK EMPTY, and that must not be silent. GitHub's "Download ZIP"
+# ships no .git, and a host may have no git at all; either way the pathspec yields
+# nothing. An empty list is not a quiet no-op here — `bash -n` with NO OPERANDS reads
+# STDIN, so `make lint-sh` would sit there waiting for input, looking like a slow gate
+# rather than a broken one (verified: it blocks until stdin closes). `shellcheck` and
+# `markdownlint-cli2` both exit non-zero on an empty argument list, so this hazard is
+# `bash -n`'s alone.
+#
+# So the git list is the PRIMARY and a wildcard is the fallback, and lint-sh says which
+# one it used. The wildcard is deliberately NOT presented as equivalent: it can only see
+# the directories named here, so it drifts from the CI pathspec the moment a .sh lands
+# somewhere new — it keeps a no-git checkout linting rather than making the "local == CI"
+# promise the git form makes.
+# `command -v git` first, not just `2>/dev/null` on the ls-files: the shell prints its
+# own `git: command not found` to ITS stderr, which the command's redirect does not
+# cover, so a no-git host leaked that line out of $(shell …) on every make invocation.
+SH_FILES_GIT := $(shell command -v git >/dev/null 2>&1 && git ls-files '*.sh' ':!:core/**' 2>/dev/null)
+SH_FILES     := $(if $(SH_FILES_GIT),$(SH_FILES_GIT),$(wildcard *.sh test/*.sh))
 ZSH_FILES   := $(wildcard os/*.zsh)
 # Unlike the two above, this is `git ls-files` rather than a literal or a wildcard: it is
 # the exact pathspec lint-call.yml's markdown leg uses, so `make lint-md` scans what the
 # blocking gate scans. A wildcard would be one directory deep and miss anything under
 # .github/, which is the scope defect found across the fleet (dotgibson/dotfiles-core#775).
-MD_FILES    := $(shell git ls-files '*.md' ':!:core/**')
+# Guarded the same way as SH_FILES_GIT above, and for the same reason: unguarded, this
+# leaked `git: command not found` / `fatal: not a git repository` out of every single
+# make invocation on a no-git host or a ZIP download — including `make help`. An empty
+# MD_FILES needs no fallback, though: markdownlint-cli2 exits non-zero on an empty
+# argument list, so lint-md already fails loudly instead of passing on nothing.
+MD_FILES    := $(shell command -v git >/dev/null 2>&1 && git ls-files '*.md' ':!:core/**' 2>/dev/null)
 
 .DEFAULT_GOAL := help
 # `test` MUST stay .PHONY now that test/ exists: a target whose name is also a
@@ -66,6 +89,13 @@ lint: lint-sh lint-zsh lint-actions lint-md capabilities ## Run every linter (sh
 # reported "ok" and exited 0 — a gate that cannot fail. lint-zsh (`|| exit 1`) and
 # lint-actions (`&&`) were already correct; this arm was the only one that was not.
 lint-sh: ## ShellCheck the repo-owned bash (uses ./.shellcheckrc)
+	@test -n "$(SH_FILES)" || { \
+	  echo "!! no repo-owned *.sh found — neither 'git ls-files' nor the wildcard fallback"; \
+	  echo "   matched anything. Refusing to report a pass on nothing; fix the checkout"; \
+	  echo "   (this is a git repo with bootstrap.sh tracked in it) rather than this gate."; \
+	  exit 1; \
+	}
+	@test -n "$(SH_FILES_GIT)" || echo "!! no git file list here (no .git, or no git on PATH) — using a wildcard, which is NOT the CI pathspec"
 	@if command -v shellcheck >/dev/null 2>&1; then \
 	  echo ":: shellcheck $(SH_FILES)"; \
 	  shellcheck -x $(SH_FILES) && echo "   ok"; \
