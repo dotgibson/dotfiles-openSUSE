@@ -44,7 +44,7 @@ permissions:
 
 jobs:
   test:
-    uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v6
+    uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v7
     with:
       # PINNED TO A DATED SNAPSHOT TAG (#150). The Docker Hub `opensuse/tumbleweed` repo has
       # exactly one tag, `latest`, and it is rebuilt daily from Factory and pushed HOURS before
