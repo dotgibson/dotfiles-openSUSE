@@ -33,10 +33,17 @@ on:
       - 'ssh/**'
       - 'wsl/**'
   # Manual trigger, so a release can be cut without inventing a commit to satisfy the
-  # path filter. Needed right now to backfill the tag PR #88 never got, and generally
-  # whenever a release is wanted for work that has already landed. Safe to press: the
-  # reusable is idempotent and no-ops when HEAD already carries a vX.Y.Z tag.
+  # path filter, and — since dotgibson/dotfiles-core#696 — so a DELIBERATE minor/major is
+  # reachable at all. `bump` has been an input of the reusable from the start and no caller
+  # in the fleet had ever passed one, so every tag any repo could cut was a patch. Safe to
+  # press: the reusable is idempotent and no-ops when HEAD already carries a vX.Y.Z tag.
   workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which SemVer component to advance'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: write
@@ -48,3 +55,7 @@ concurrency:
 jobs:
   tag:
     uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@v6
+    # `inputs` is empty on a push event, so this reads `patch` there and the chosen
+    # component on a dispatch. One caller, both flows.
+    with:
+      bump: ${{ inputs.bump || 'patch' }}
