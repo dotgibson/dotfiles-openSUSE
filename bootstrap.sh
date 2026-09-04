@@ -98,6 +98,28 @@ source "$DOTFILES/core/lib/ux.sh"
 # shellcheck source=core/lib/bootstrap-lib.sh
 source "$DOTFILES/core/lib/bootstrap-lib.sh"
 
+# ── PATH prelude: make the presence guards below tell the TRUTH ───────────────
+# bootstrap runs in BASH, before any Core shell exists, so the user-local bindirs the
+# installs below WRITE INTO are not on PATH yet — ~/.local/bin, ~/.cargo/bin and GOBIN
+# reach PATH only via core/zsh/00-tools.zsh and os/opensuse.zsh, i.e. only inside a Core
+# zsh. Every `command -v <tool>` guard in this script is otherwise answered by the PATH
+# of whatever shell launched it, and on a fresh box that is bash with none of them.
+#
+# THIS IS THE #130 BUG, fixed at its root. mise.run drops its binary in ~/.local/bin, so
+# a bare `command -v mise` was false for the mise this script had installed moments
+# earlier: both arms of the Go fallback missed and the else branch reported "needs a Go
+# toolchain" on a box that had one. doggo and sesh went uninstalled and the run exited 2
+# on EVERY bootstrap, invisible to CI until a genuinely unstubbed run looked (#130,
+# dotgibson/dotfiles-core#742). That was patched with a local `_mise_bin` helper, which
+# fixed the one probe it wrapped and left every OTHER off-PATH tool in this script with
+# the same blind guard. Core has shipped blib_user_bindirs_on_path for exactly this since
+# dotgibson/dotfiles-core#425; adopting it retires the fork (dotgibson/dotfiles-core#748).
+#
+# It resolves CARGO_HOME and GOBIN/GOPATH rather than hard-coding them, and adds only
+# directories that EXIST — so it is called AGAIN inside provision() once the installers
+# have created them. See there.
+blib_user_bindirs_on_path
+
 # --dry-run: BLIB_DRY makes the Core link helpers (blib_link/blib_seed/…) print their
 # plan and change nothing. It does NOT cover zypper — package provisioning is gated
 # separately in main() so a preview never touches the system.
@@ -229,30 +251,6 @@ zypper_install() {
   done
 }
 
-# _mise_bin — echo a usable `mise`, or nothing at all.
-#
-# mise.run drops its binary in ~/.local/bin. The SHELL layer prefixes that directory, but
-# THIS script never does — so a bare `command -v mise` is false for the mise the block
-# below installed moments earlier, and every Go fallback that probed that way skipped a
-# working toolchain and reported "needs a Go toolchain" on a box that had one. That is
-# what left doggo and sesh uninstalled on EVERY openSUSE bootstrap, exiting 2 forever,
-# invisible to CI until a genuinely unstubbed run looked (dotgibson/dotfiles-core#742).
-#
-# The mise install block already guards both ways (`command -v mise` OR the ~/.local/bin
-# path). This is that same two-armed test, factored out so the Go fallbacks cannot drift
-# from it again — the bug survived in the yq copy precisely because there were two.
-#
-# Echoes a PATH-resolved name or an absolute path; callers must invoke it as "$mise_bin",
-# never as a bare `mise`. Always returns 0: callers assign it under `set -e`.
-_mise_bin() {
-  if command -v mise >/dev/null 2>&1; then
-    command -v mise
-  elif [[ -x "$HOME/.local/bin/mise" ]]; then
-    printf '%s\n' "$HOME/.local/bin/mise"
-  fi
-  return 0
-}
-
 # Best-effort `go install` for tools not packaged on openSUSE. Presence-guarded
 # (skips if the binary already exists), tolerant of a missing Go toolchain, and
 # never aborts the run — but every failure is now recorded in the ledger.
@@ -263,13 +261,15 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
   # layer prefixes ~/.local/bin and ~/.cargo/bin). Force GOBIN into ~/.local/bin.
   local gobin="$HOME/.local/bin"
   mkdir -p "$gobin" 2>/dev/null || true
-  local mise_bin
-  mise_bin="$(_mise_bin)"
+  # A BARE `command -v mise` again, and it is correct now: blib_user_bindirs_on_path has
+  # put ~/.local/bin on this script's PATH, so it sees the mise provision() installed.
+  # This used to route through a local `_mise_bin` fork of that logic, which had to be
+  # written twice and was wrong in one of the copies.
   if command -v go >/dev/null 2>&1; then
     GOBIN="$gobin" go install "$1" >/dev/null 2>&1 ||
       _note_fail "$2 — go install failed; retry: GOBIN=$gobin go install $1"
-  elif [[ -n "$mise_bin" ]]; then
-    GOBIN="$gobin" "$mise_bin" exec go@latest -- go install "$1" >/dev/null 2>&1 ||
+  elif command -v mise >/dev/null 2>&1; then
+    GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 ||
       _note_fail "$2 — go install failed; retry: GOBIN=$gobin go install $1"
   else
     _note_fail "$2 — needs a Go toolchain; install Go then: GOBIN=$gobin go install $1"
@@ -383,6 +383,11 @@ provision() {
     curl -fsSL https://mise.run | sh >/dev/null ||
       _note_fail "mise — installer failed; retry: curl -fsSL https://mise.run | sh"
   fi
+  # Re-run the PATH prelude: the helper adds only directories that already EXIST, and
+  # ~/.local/bin is the one mise.run may have just created. Without this second call the
+  # `command -v mise` fallbacks below are blind to it again — which is the whole bug.
+  # Idempotent by construction.
+  blib_user_bindirs_on_path
   # tree-sitter CLI — nvim-treesitter (main) compiles parsers locally and needs the
   # CLI (>=0.26.1). This used to read "NOT in openSUSE repos", and that was wrong: the
   # CLI ships in the BASE `tree-sitter` package (0.26.8 on Tumbleweed and Leap 16.x),
@@ -509,13 +514,11 @@ provision() {
     local yqpath="github.com/mikefarah/yq/v4@latest"
     mkdir -p "$yqbin" 2>/dev/null || true
     blib_say "yq (mikefarah Go build)"
-    local yq_mise
-    yq_mise="$(_mise_bin)"
     if command -v go >/dev/null 2>&1; then
       GOBIN="$yqbin" go install "$yqpath" >/dev/null 2>&1 ||
         _note_fail "yq — go install failed; retry: GOBIN=$yqbin go install $yqpath"
-    elif [[ -n "$yq_mise" ]]; then
-      GOBIN="$yqbin" "$yq_mise" exec go@latest -- go install "$yqpath" >/dev/null 2>&1 ||
+    elif command -v mise >/dev/null 2>&1; then
+      GOBIN="$yqbin" mise exec go@latest -- go install "$yqpath" >/dev/null 2>&1 ||
         _note_fail "yq — go install failed; retry: GOBIN=$yqbin go install $yqpath"
     else
       _note_fail "yq — needs a Go toolchain; install Go then: GOBIN=$yqbin go install $yqpath"
