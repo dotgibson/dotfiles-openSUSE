@@ -71,7 +71,7 @@ jobs:
       # governs Core's own workflows, not caller inputs (dotfiles-Alpine passes `alpine:3.24`).
       # The reusable's `docker run "$IMAGE"` and Core's fleet-bootstrap-matrix.py (the weekly
       # real-bootstrap sweep) take this registry-qualified ref verbatim.
-      image: registry.opensuse.org/opensuse/tumbleweed:20260901
+      image: registry.opensuse.org/opensuse/tumbleweed:20260902
       # openSUSE Tumbleweed's OSS mirror (cdn.opensuse.org) intermittently times out
       # in CI (curl error 28), and a single `zypper install` has no retry, so one slow
       # fetch fails the whole links-only job (zsh "no provider" -> exit 104). Retry the
