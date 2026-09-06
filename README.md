@@ -112,7 +112,7 @@ cd ~/dotfiles-openSUSE
 exec zsh
 ```
 
-`core/` is a vendored subtree and is **already present** in a clone — there is no
+`core/` is a vendored copy and is **already present** in a clone — there is no
 submodule step. `bootstrap.sh` is idempotent: it refreshes `zypper` metadata,
 installs the package list, and symlinks Core + the openSUSE layer into place. It
 only refreshes metadata — the `dup`-vs-`up` upgrade choice stays yours.

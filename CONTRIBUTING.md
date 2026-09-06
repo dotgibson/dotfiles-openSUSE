@@ -10,7 +10,7 @@ contract — see dotfiles-core's [`README.md`](https://github.com/dotgibson/dotf
 
 ## The rule that bites
 
-**`core/` is a vendored `git subtree` copy of `dotfiles-core`. It is not editable here.**
+**`core/` is a vendored copy of `dotfiles-core`. It is not editable here.**
 
 Anything you change under `core/` is overwritten on the next sync, and the
 `core-integrity` CI gate will fail the PR by comparing the vendored tree hash against
