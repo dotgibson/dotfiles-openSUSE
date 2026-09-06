@@ -74,6 +74,12 @@ ZSH_FILES   := $(wildcard os/*.zsh)
 # MD_FILES needs no fallback, though: markdownlint-cli2 exits non-zero on an empty
 # argument list, so lint-md already fails loudly instead of passing on nothing.
 MD_FILES    := $(shell command -v git >/dev/null 2>&1 && git ls-files '*.md' ':!:core/**' 2>/dev/null)
+# The markdown linter is PINNED to the version the blocking gate installs, read from the
+# vendored Core pins rather than restated here (dotfiles-core#873). Unguarded `sed` is safe
+# where the guarded `git` above was not: sed is coreutils-adjacent and always present, and a
+# missing pins file just yields an empty string, which lint-md refuses on.
+CORE_PINS   := core/scripts/tool-versions.env
+MARKDOWNLINT_VERSION := $(shell sed -n 's/^MARKDOWNLINT_VERSION=//p' $(CORE_PINS) 2>/dev/null)
 
 .DEFAULT_GOAL := help
 # `test` MUST stay .PHONY now that test/ exists: a target whose name is also a
@@ -131,11 +137,21 @@ lint-actions: ## actionlint the workflow callers
 # a .markdownlint.jsonc only CI ever read. Skips like its siblings above; the message names
 # CI as the remaining gate rather than implying coverage.
 lint-md: ## markdownlint the repo-owned docs (ShellCheck and zsh -n never read markdown)
-	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
-	  echo ":: markdownlint-cli2 $(words $(MD_FILES)) file(s)"; \
-	  markdownlint-cli2 $(MD_FILES) && echo "   ok"; \
+	@# npx AND A PIN, not a global markdownlint-cli2 (dotfiles-core#873). The probe used to
+	@# be `command -v markdownlint-cli2`, and nothing in this repo's bootstrap installs that
+	@# — so on a normal box the guard fired every time and the target never linted anything.
+	@# A local mirror of a blocking gate that always skips is not a mirror. And where the
+	@# binary DID exist it was whatever npm last put there, while the gate runs the pinned
+	@# version, so a rule that changes across a bump reds CI against a green run here.
+	@# npx needs only node, fetches the exact pinned version, and REFUSES rather than guess
+	@# if the pin is unreadable — a silently-unpinned lint is the thing being fixed.
+	@if ! command -v npx >/dev/null 2>&1; then \
+	  echo "!! npx not available — skipping (CI still enforces it)"; \
+	elif [ -z "$(MARKDOWNLINT_VERSION)" ]; then \
+	  echo "!! MARKDOWNLINT_VERSION unreadable from $(CORE_PINS) — refusing to lint unpinned"; exit 1; \
 	else \
-	  echo "!! markdownlint-cli2 not installed — skipping (npm i -g markdownlint-cli2; CI still enforces it)"; \
+	  echo ":: markdownlint-cli2@$(MARKDOWNLINT_VERSION) $(words $(MD_FILES)) file(s)"; \
+	  npx --yes markdownlint-cli2@$(MARKDOWNLINT_VERSION) $(MD_FILES) && echo "   ok"; \
 	fi
 
 # THE TREE COMPARISON IS DELEGATED TO CORE, and that is a correction, not a preference.
