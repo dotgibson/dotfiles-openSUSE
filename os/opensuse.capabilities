@@ -79,7 +79,20 @@ PKG_PENDING_FIELD=3
 # Leap is versioned and upgrades with `up`, so it declares the flag. Apply with `up`.
 
 # ── optional tools ────────────────────────────────────────────────────────────
-# NO TOOLS_OPTIN. PORTING-MATRIX.md's ²¹ cells show openSUSE PACKAGES jj and ast-grep,
-# the two tools that are opt-in on Gentoo and the Debian family — so there is no delta
-# from Core's _CORE_DOCTOR_OPTIN default, and a declared list REPLACES that default
-# rather than adding to it, so a copy here could only drift.
+# TOOLS_OPTIN, and the reason it exists now when it deliberately did not before.
+#
+# The old note said there was no delta from Core's default: PORTING-MATRIX.md's ²¹ cells
+# showed openSUSE PACKAGING jj and ast-grep, the two tools opt-in on Gentoo and the Debian
+# family, so a copy here could only drift. That was true — and `uv` is the delta that ended
+# it (dotfiles-core#836). This repo installs no `uv`: it is in no `install/packages.txt`
+# line, so `core-doctor` counted it EXPECTED and rendered a ✗ on every openSUSE box for a
+# tool the bootstrap was never going to put there. The matrix cell now carries ²¹ to say so.
+#
+# THE LIST REPEATS CORE'S NINE, because a declared TOOLS_OPTIN REPLACES the
+# _CORE_DOCTOR_OPTIN default rather than adding to it — declaring `uv` alone would have
+# turned the other nine back into expected-and-missing, trading one false ✗ for nine. Same
+# shape as dotfiles-Gentoo's and dotfiles-Debian's declarations, which repeat the nine and
+# append their own two.
+#
+# jj and ast-grep stay OUT: this repo packages both, so they are genuinely expected here.
+TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv
