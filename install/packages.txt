@@ -96,7 +96,7 @@ tree-sitter    # tree-sitter CLI. nvim-treesitter (pinned to `main`) compiles pa
                # Arch/Alpine split name, and looking for it under that name is exactly how
                # this list concluded "genuinely unpackaged" and cargo-built it instead. The
                # CLI is in the BASE `tree-sitter` package; the shared library is what got
-               # split off, as `tree-sitter0_26`. Mac inverts this: there `tree-sitter` is
+               # split off, as `libtree-sitter0_26`. Mac inverts this: there `tree-sitter` is
                # the lib-only formula and `tree-sitter-cli` is the one you want.
                # bootstrap.sh's cargo build stays as a presence-guarded fallback (#113).
 # Installed by bootstrap.sh, not packaged here:
