@@ -27,7 +27,9 @@
 #
 # Plus the two things that make the split reachable at all: bootstrap.sh's
 # /etc/os-release probe and its relink of the Leap file, and the pair of user-facing
-# `zup`/`zdup` aliases in os/opensuse.zsh.
+# `zup`/`zdup` aliases in os/opensuse.zsh. And one thing about that file that is not a
+# flavor question but lives here because this is the test that already reads it: its
+# WSL-only aliases must ask Core (_core_is_wsl), not a private copy of the detection.
 #
 # Needs no zypper and no openSUSE: it reads the repo, so it is the half of the suite
 # that is true everywhere and runs in CI on a plain runner.
@@ -209,6 +211,30 @@ if grep -qE "^alias zdup=.*zypper dup" os/opensuse.zsh; then
   printf '  %s\n' "zdup -> zypper dup  (Tumbleweed)"
 else
   note_fail "os/opensuse.zsh: no 'zdup' alias for 'zypper dup' — bootstrap.sh's own output tells a Tumbleweed user to run 'zdup'"
+fi
+
+# ── 6. the WSL predicate is Core's, not this layer's ─────────────────────────
+# os/opensuse.zsh gates its WSL-only aliases (open/xdg-open/cdwin) on a WSL question that
+# Core answers: _core_is_wsl in core/zsh/00-tools.zsh (dotfiles-core#449). Six OS repos
+# each carried a private copy of that detection until #179, and the reusable lint
+# workflow's Core-owned-block leg is flipping from a warning to a failure once they are
+# gone. This asserts both halves locally, before that flip: the private copy stays gone,
+# AND the Core call is still there — delete the block without rewiring its consumer and
+# the aliases go quiet on every WSL box with no error to say so.
+#
+# The pattern is the leg's own (core/scripts/lib/common.sh :: _core_owned_block_hits,
+# rule `wsl-detect`), minus its comment-line skip; keep prose about the kernel version
+# file out of os/opensuse.zsh rather than teaching this grep to skip comments.
+say "os/opensuse.zsh asks Core whether this is WSL"
+if grep -qE '/proc/version|(^|[^[:alnum:]_])_IS_WSL[[:space:]]*=' os/opensuse.zsh; then
+  note_fail "os/opensuse.zsh re-implements WSL detection — Core owns it (core/zsh/00-tools.zsh :: _core_is_wsl); use 'if _core_is_wsl; then' (#179)"
+else
+  printf '  %s\n' "no local WSL detection"
+fi
+if grep -qE '(^|[^[:alnum:]_])_core_is_wsl($|[^[:alnum:]_])' os/opensuse.zsh; then
+  printf '  %s\n' "_core_is_wsl is called"
+else
+  note_fail "os/opensuse.zsh never calls _core_is_wsl — the WSL-only aliases (open/xdg-open/cdwin) have no predicate gating them"
 fi
 
 echo
