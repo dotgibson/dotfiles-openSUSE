@@ -51,6 +51,14 @@ TOLERATE=0
 # AFTER this loop — so capture the raw values now and apply them below.
 ONLY_RAW="" SKIP_RAW="" ONLY_SEEN=0 SKIP_SEEN=0
 
+# Neovim version floor. nvim-treesitter's `main` branch (core/nvim, lazy-lock.json) does
+# not merely prefer 0.12 — it will not load below it. Named once here because it is
+# asserted in two places that must agree: install/packages.txt's `# min:` on the neovim
+# entry (the fleet contract core/PORTING-MATRIX.md derives its cell from) and this, which
+# _dotfiles_nvim_meets_floor reads; test/check-packages.sh fails if the two drift apart.
+# Bump it only when Core's floor actually moves.
+NEOVIM_FLOOR="0.12.0"
+
 while [[ $# -gt 0 ]]; do case "$1" in
   --links-only) LINKS_ONLY=1 ;;
   --no-flatpak) DO_FLATPAK=0 ;;
@@ -257,6 +265,35 @@ zypper_install() {
 # Best-effort `go install` for tools not packaged on openSUSE. Presence-guarded
 # (skips if the binary already exists), tolerant of a missing Go toolchain, and
 # never aborts the run — but every failure is now recorded in the ledger.
+# ── neovim version floor ──────────────────────────────────────────────────────
+# _dotfiles_nvim_meets_floor <floor> — true when the nvim that will actually RUN clears
+# <floor>. PATH-only on purpose: there is no cargo/user-local neovim to also probe (no
+# crate ships the binary), and the PATH prelude already puts mise shims and ~/.local/bin
+# ahead of /usr/bin, so whatever `command -v nvim` resolves to IS what Core's config
+# loads — including a `mise use -g neovim@0.12` that an operator installed to get past
+# Leap 16.0's 0.11.3. An nvim whose --version cannot be run or parsed counts as NOT
+# meeting the floor: fail loud, the same default Alpine's twin of this helper takes.
+#
+# The comparison is `zypper versioncmp`, the RPM comparator zypper itself uses, rather
+# than a hand-rolled field compare: bootstrap only runs on openSUSE (the /etc/os-release
+# check above), so zypper is a given. zypper(8): exit 0 = equal, 11 = VERSION1 newer,
+# 12 = VERSION2 newer. Dev builds print "NVIM v0.12.0-dev-1234+gabc123"; the RPM
+# comparator reads that as 0.12.0 with a release, which is at the floor, not below it.
+_dotfiles_nvim_meets_floor() { # <floor>
+  local floor="$1" cand out ver
+  cand="$(command -v nvim 2>/dev/null)" || return 1
+  [[ -n "$cand" && -x "$cand" ]] || return 1
+  out="$("$cand" --version 2>/dev/null)" || return 1
+  # First line is "NVIM v0.12.5"; take its last field and drop the leading "v".
+  out="${out%%$'\n'*}"
+  ver="${out##* }"
+  ver="${ver#v}"
+  [[ "$ver" =~ ^[0-9] ]] || return 1
+  zypper --non-interactive versioncmp "$ver" "$floor" >/dev/null 2>&1
+  case $? in 0 | 11) return 0 ;; esac
+  return 1
+}
+
 _dotfiles_go_install() { # <import-path@version> <binary-name>
   [ "$#" -ge 2 ] || return 0
   if command -v "$2" >/dev/null 2>&1; then return 0; fi
@@ -391,6 +428,18 @@ provision() {
   # `command -v mise` fallbacks below are blind to it again — which is the whole bug.
   # Idempotent by construction.
   blib_user_bindirs_on_path
+  # neovim — VERSION-checked, warn-only, and placed AFTER the mise block and the PATH
+  # re-run so a mise-installed nvim is what gets probed. The zypper pass above installs
+  # `neovim` on every target and only two of the three clear nvim-treesitter's floor:
+  # Leap 16.0 ships 0.11.3 (install/packages.txt has the table). Warn rather than fix,
+  # deliberately: there is no packaging lever on 16.0 (no newer build in OSS or
+  # Backports), and pulling a runtime through mise unasked is not bootstrap's call —
+  # point at the two real fixes and let the operator choose. The one thing this must
+  # NOT do is stay silent: a `zypper in neovim` that succeeds and leaves nvim-treesitter
+  # unable to load is exactly the invisible failure #178 reported.
+  if ! _dotfiles_nvim_meets_floor "$NEOVIM_FLOOR"; then
+    blib_warn "neovim is absent or below nvim-treesitter's >=$NEOVIM_FLOOR floor (Leap 16.0 ships 0.11.3) — nvim-treesitter will not load. Fix: move this box to Leap 16.1+ or Tumbleweed, or install a newer nvim (mise use -g neovim@0.12)"
+  fi
   # tree-sitter CLI — nvim-treesitter (main) compiles parsers locally and needs the
   # CLI (>=0.26.1). This used to read "NOT in openSUSE repos", and that was wrong: the
   # CLI ships in the BASE `tree-sitter` package (0.26.8 on Tumbleweed and Leap 16.x),

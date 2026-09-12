@@ -34,6 +34,25 @@
 # `zypper info` prints "not found" for a bogus name and still EXITS 0, which is a gate
 # that can never fail. Only the solver answers the question bootstrap.sh will ask.
 #
+# VERSION FLOORS ARE CHECKED, per flavor, and a name resolving is not the whole story for
+# a floored entry: `neovim` resolves on Tumbleweed, Leap 16.1 AND Leap 16.0, and clears
+# its `# min:0.12.0` on only the first two (#178). Two facts, and this gate reports both.
+# The floor is declared ONCE as a contract in two places that must agree — the `# min:`
+# on the manifest line, and NEOVIM_FLOOR in bootstrap.sh, which warns on the box — and
+# the hygiene half asserts that agreement, so the restatement cannot silently drift. The
+# probe itself needs zypper (`zypper info` for the candidate, `zypper versioncmp` for
+# the RPM comparison) but NOT root, so it runs wherever the resolve is skipped for lack
+# of it. Three tiers, because a gate that cannot tell them apart is the useless kind:
+#
+#   • a floor unmet on TUMBLEWEED       → FAIL (exit 2). Unsatisfiable fleet-wide: Core's
+#                                          pin outran the rolling target.
+#   • a floor unmet on LEAP             → REPORT. Known, documented in the manifest, and
+#                                          unfixable by zypper on that release; bootstrap.sh
+#                                          warns on the box itself. Failing would be a
+#                                          permanent red that no one can act on.
+#   • a floor that disagrees with       → FAIL (exit 1). A contract with two values is
+#     bootstrap.sh's NEOVIM_FLOOR          not a contract.
+#
 # RUN IT WHERE THE ANSWER IS TRUE. Availability is a property of the repos on the box,
 # and Tumbleweed and Leap disagree BY DESIGN — install/packages.txt documents the
 # flavor-dependent entries, and bootstrap.sh cargo-builds them on Leap. Those names are
@@ -41,8 +60,9 @@
 # authoritative resolve is the workflow, in a pinned container.
 #
 # Exit codes:
-#   0  the list is well-formed, and every name resolved (or a clean skip: no zypper/root)
-#   1  usage/environment failure
+#   0  the list is well-formed, every name resolved and every declared floor is met on
+#      this flavor (or a clean skip: no zypper/root)
+#   1  usage/environment failure, or a `# min:` that disagrees with bootstrap.sh
 #   2  one or more findings — the drift signal
 #
 # Usage:
@@ -140,6 +160,38 @@ for p in "${pkgs[@]}"; do
 done
 ((badname)) || printf '  %s\n' "every name is a legal RPM package name"
 
+# ── 1b. version floors: one contract, two spellings, must agree ───────────────
+# Floors live in the manifest's trailing comments (`name  # min:X.Y.Z`) so the file stays
+# human-first and there is no second list to drift — read straight from the source, since
+# blib_read_pkgs strips comments by design. bootstrap.sh restates neovim's as NEOVIM_FLOOR
+# (the value it warns against on the box); that restatement is the one thing here that CAN
+# drift, so it is asserted, and a mismatch is a broken contract rather than a finding.
+declare -A floors=()
+while IFS= read -r line; do
+  [[ "$line" =~ ^[[:space:]]*# ]] && continue
+  [[ "$line" == *"min:"* ]] || continue
+  name="${line%%#*}"; name="${name//[[:space:]]/}"
+  [[ -n "$name" ]] || continue
+  floor="$(printf '%s' "$line" | sed -n 's/.*min:\([0-9][0-9A-Za-z.+~-]*\).*/\1/p')"
+  [[ -n "$floor" ]] || continue
+  floors["$name"]="$floor"
+done <"$manifest"
+if ((${#floors[@]})); then
+  say "declared version floors"
+  for name in "${!floors[@]}"; do printf '  %-16s >= %s\n' "$name" "${floors[$name]}"; done
+fi
+if [[ -n "${floors[neovim]:-}" ]]; then
+  bfloor="$(sed -n 's/^NEOVIM_FLOOR="\([^"]*\)".*/\1/p' bootstrap.sh | head -1)"
+  if [[ -z "$bfloor" ]]; then
+    bad "bootstrap.sh no longer declares NEOVIM_FLOOR — nothing warns a Leap 16.0 box that its neovim is below the floor install/packages.txt declares"
+    exit 1
+  elif [[ "$bfloor" != "${floors[neovim]}" ]]; then
+    bad "neovim floor disagrees: install/packages.txt says min:${floors[neovim]}, bootstrap.sh says NEOVIM_FLOOR=$bfloor — one contract, two values; fix whichever is stale"
+    exit 1
+  fi
+  printf '  %s\n' "neovim floor agrees with bootstrap.sh's NEOVIM_FLOOR ($bfloor)"
+fi
+
 # ── 2. resolution ─────────────────────────────────────────────────────────────
 # Everything below needs zypper and the privileges its solver insists on even for a
 # --dry-run. Report the skip and fall through to the verdict rather than pretending.
@@ -226,6 +278,51 @@ resolve_or_skip() {
 }
 resolve_or_skip
 
+# ── 3. version floors: does the candidate clear them on THIS flavor? ─────────
+# `zypper info` prints the candidate's "Version : X-R" line and needs no root (unlike the
+# solver above), so this runs on a box where the resolve was skipped. `zypper versioncmp`
+# is the RPM comparator zypper itself uses — the openSUSE analogue of Debian's
+# `dpkg --compare-versions` — and its exit codes are documented in zypper(8): 0 equal,
+# 11 VERSION1 newer, 12 VERSION2 newer. Not `sort -V`: the candidate carries a release
+# (`0.11.3-bp160.2.1`) and RPM's rules for that are not sort's.
+floors_or_skip() {
+  ((${#floors[@]})) || return 0
+  command -v zypper >/dev/null 2>&1 || {
+    say "no zypper on this host — skipping the floor probe (the authoritative run is .github/workflows/bootstrap.yml)"
+    return 0
+  }
+  local flavor="Leap"
+  grep -qi tumbleweed /etc/os-release 2>/dev/null && flavor="Tumbleweed"
+  say "version floors on $flavor"
+  local name floor cand rc
+  for name in "${!floors[@]}"; do
+    floor="${floors[$name]}"
+    cand="$(zypper --non-interactive info "$name" 2>/dev/null | sed -n 's/^Version *: *//p' | head -1)"
+    if [[ -z "$cand" ]]; then
+      # No candidate at all is the resolve pass's finding, not this one's — do not report
+      # one missing name twice.
+      bad "$name — no candidate on $flavor, cannot check its >=$floor floor (the resolve above owns that finding)"
+      continue
+    fi
+    rc=0
+    zypper --non-interactive versioncmp "$cand" "$floor" >/dev/null 2>&1 || rc=$?
+    case $rc in
+    0 | 11) printf '  %-16s %s (floor %s) ok\n' "$name" "$cand" "$floor" ;;
+    12)
+      if [[ "$flavor" == Leap ]]; then
+        # Documented in install/packages.txt: Leap 16.0 ships below the floor and zypper
+        # has no lever there. bootstrap.sh warns on the box; here it is a report.
+        bad "$name — candidate $cand is BELOW its >=$floor floor on $flavor; install/packages.txt documents this (Leap 16.0), bootstrap.sh warns on the box, and the fix is Leap 16.1+ or 'mise use -g $name@${floor%.*}'"
+      else
+        note "$name — candidate $cand is BELOW its >=$floor floor on $flavor: Core's pin has outrun the rolling target"
+      fi
+      ;;
+    *) bad "$name — 'zypper versioncmp $cand $floor' returned $rc; cannot judge the floor" ;;
+    esac
+  done
+}
+floors_or_skip
+
 # ── verdict ───────────────────────────────────────────────────────────────────
 echo
 if ((${#findings[@]})); then
@@ -240,6 +337,8 @@ A non-resolving name is one of:
   • flavor drift   — real on Tumbleweed, absent on Leap. If bootstrap.sh already has a
                      fallback for it, add the name to LEAP_OPTIONAL in this test and say
                      so in install/packages.txt, the way tealdeer does.
+A name BELOW its floor on Tumbleweed means Core's pin has moved past what the rolling
+target ships: raise it upstream (dotfiles-core) rather than lowering the `# min:` here.
 EOF
   exit 2
 fi
