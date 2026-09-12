@@ -108,7 +108,21 @@ tree-sitter    # tree-sitter CLI. nvim-treesitter (pinned to `main`) compiles pa
 #   - vendor repo:   op (1Password CLI, from 1Password's signed rpm repo)
 
 # ── editor + git workflow ─────────────────────────────────────
-neovim
+neovim           # min:0.12.0 — nvim-treesitter (core/nvim, pinned to `main`) will not load
+                 # below this; core/nvim/lua/gerrrt/config/providers.lua says so in as many
+                 # words. The name resolves on all three targets but only CLEARS the floor
+                 # on two: Tumbleweed 0.12.5 yes, Leap 16.1 0.12.4 yes, Leap 16.0 0.11.3
+                 # (bp160) NO — checked 2026-09-12, #178. That is footnote 33's Alpine shape
+                 # (a supported stable branch whose package installs fine and is the wrong
+                 # version), and like Alpine there is no packaging lever: no newer build in
+                 # 16.0's OSS or Backports, and no keyword/archive to reach past. So the
+                 # floor is declared, not enforced: bootstrap.sh's NEOVIM_FLOOR WARNS on a
+                 # short box and test/check-packages.sh REPORTS (does not fail) it on Leap,
+                 # while a Tumbleweed shortfall IS a failure there — that would mean Core's
+                 # pin outran the fleet. Fix on a 16.0 box: move to 16.1, or
+                 # `mise use -g neovim@0.12`. The `# min:` spelling is the fleet contract
+                 # (Debian/Gentoo/Alpine) and is what core/PORTING-MATRIX.md derives the
+                 # openSUSE cell's `≥ 0.12.0` from; zypper never sees it (comments strip).
 git              # `git subtree` ships WITH git on openSUSE (no separate package, unlike Fedora)
 openssh-clients  # ssh / ssh-keygen / ssh-agent. Older Leap may call this just `openssh`
 lazygit          # in openSUSE repos (unlike Fedora, which needs a COPR)
