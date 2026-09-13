@@ -35,8 +35,9 @@ Exit codes:
      failure ledger is printed at the end with a retry hint for each
 
 Environment:
-  BLIB_SU   privilege escalator; defaults to `sudo`. Set BLIB_SU="" when already
-            root (minimal containers often have no sudo), or BLIB_SU=doas.
+  BLIB_SU   privilege escalator. Resolved by Core's blib_resolve_su when unset: root
+            runs directly, else sudo, else doas. Set BLIB_SU="" or BLIB_SU=doas to
+            override the probe (minimal containers often have no sudo).
   BLIB_DRY  set by --dry-run; makes the Core link helpers plan-only.
 EOF
 }
@@ -148,16 +149,18 @@ if ((SKIP_SEEN)); then blib_select --skip "$SKIP_RAW"; fi
 # "bootstrap complete" and exited 0 — the operator had no signal at all. Record every
 # soft failure here instead, print them together at the end, and exit 2 so a caller
 # (or CI) can tell a clean install from a lossy one.
-BOOTSTRAP_FAILED=()
-_note_fail() { BOOTSTRAP_FAILED+=("$1"); }
+#
+# The ledger is Core's: _note_fail is a thin shim over blib_note_fail (records into
+# BLIB_FAILED and warns at the moment it happens, so a miss is visible in the scrollback
+# and not only in the closing tally), and _report_failures wraps blib_failures_report —
+# which also carries the failures the shared lib records ITSELF (the tpm clone,
+# blib_install_system_file), previously dropped. The exit code stays 2 and
+# --tolerate-failures keeps its meaning; those are this repo's contract, not the lib's.
+_note_fail() { blib_note_fail "$@"; }
 
 _report_failures() {
-  ((${#BOOTSTRAP_FAILED[@]})) || return 0
-  printf '\n'
-  blib_warn "${#BOOTSTRAP_FAILED[@]} item(s) did not install — the rest of the box is wired and usable:"
-  local f
-  for f in "${BOOTSTRAP_FAILED[@]}"; do printf '   - %s\n' "$f" >&2; done
-  printf '\n' >&2
+  blib_failures_report && return 0
+  blib_warn "the rest of the box is wired and usable"
   if ((TOLERATE)); then
     blib_warn "--tolerate-failures set — exiting 0 anyway"
     return 0
@@ -179,34 +182,26 @@ _priv() {
   if [[ -n "$su" ]]; then "$su" "$@"; else "$@"; fi
 }
 
-# Fail fast and precisely if we cannot escalate, rather than dying mid-provision.
-_priv_preflight() {
-  local su="${BLIB_SU-sudo}"
-  [[ -z "$su" ]] && return 0                 # explicitly root
-  if command -v "$su" >/dev/null 2>&1; then
-    # Prime the credential cache once up front. The cargo builds below can take many
-    # minutes, and a sudo timestamp expiring mid-run turns an unattended provision
-    # into one silently blocked on a password prompt.
-    # Written as an explicit `if` rather than `[[ … ]] && sudo -v || true`: that form is
-    # the SC2015 A&&B||C antipattern, where C also runs when A is true.
-    if [[ "$su" == sudo ]]; then
-      sudo -v 2>/dev/null || true
-    fi
-    return 0
-  fi
-  if ((EUID == 0)); then
-    echo "'$su' not found, but running as root — re-run with BLIB_SU=\"\" to skip escalation" >&2
-    exit 1
-  fi
-  echo "'$su' not found and not running as root. Install sudo, run as root with BLIB_SU=\"\"," >&2
-  echo "or set BLIB_SU to your escalator (e.g. BLIB_SU=doas ./bootstrap.sh)." >&2
-  exit 1
-}
+# Resolving the escalator and keeping sudo's timestamp warm are Core's blib_resolve_su
+# and blib_sudo_keepalive_start / _stop (core/lib/bootstrap-lib.sh): the first runs right
+# after the openSUSE guard below, the pair inside main() around provision(). The old
+# one-shot `sudo -v` here primed the cache once and then let it expire mid-cargo-build —
+# the invisible-prompt hang the keepalive exists to prevent.
 
 # ── sanity: confirm we're on openSUSE (matches Tumbleweed AND Leap) ───────────
 if ! grep -qi opensuse /etc/os-release 2>/dev/null; then
   echo "This bootstrap targets openSUSE. /etc/os-release doesn't look like openSUSE." >&2
   exit 1
+fi
+
+# blib_resolve_su, not a hand-rolled probe: it decides "root" from $EUID, pins the ABSOLUTE
+# path of sudo or doas, and honours an explicit BLIB_SU= from the caller (the env contract
+# above; CI's --links-only leg sets it empty). --require only when packages will actually
+# be installed: wiring symlinks and a dry run need no privileges.
+if ((LINKS_ONLY)) || ((DRY_RUN)); then
+  blib_resolve_su || true
+else
+  blib_resolve_su --require || exit 1
 fi
 
 IS_WSL=0
@@ -697,8 +692,13 @@ main() {
   elif ((DRY_RUN)); then
     blib_say "(dry run) would provision zypper packages from install/packages.txt, then the upstream/cargo/go tool set"
   else
-    _priv_preflight
+    trap 'blib_sudo_keepalive_stop' EXIT
+    blib_sudo_keepalive_start || {
+      echo "sudo authentication failed — cannot provision packages." >&2
+      exit 1
+    }
     provision
+    blib_sudo_keepalive_stop
   fi
 
   wire_links
