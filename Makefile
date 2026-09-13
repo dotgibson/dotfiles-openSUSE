@@ -302,35 +302,35 @@ packages-check: ## Do all install/packages.txt names resolve against zypper? (in
 # /etc/shells) is the one thing wire_links does that reaches outside $HOME, and it is
 # neither what this target is asserting nor something a check may do to the host.
 check: lint ## lint + a hermetic --links-only run against a throwaway HOME
+	@# Core's check-links.sh, vendored since dotgibson/dotfiles-core#852: ONE definition of the
+	@# hermetic --links-only gate instead of the copy this recipe carried, which had drifted
+	@# against the other three copies exactly the way #852 found (a HOME that was not hermetic
+	@# when XDG_CONFIG_HOME was exported). The Core graph — loader, prompt, editor, tmux, git,
+	@# the numbered zsh fragments, the seeded sesh.toml, the managed ~/.zshrc — is the
+	@# script's own default; --require adds only what THIS repo's OS layer wires on top
+	@# (core/lib/bootstrap-lib.sh :: blib_link_os_layer). Exit 2 is the drift signal.
+	@# The flavor assertion stays: check-flavors.sh proves the two declarations differ only
+	@# where they may and that the relink mechanism exists; this proves which one THIS box
+	@# actually got. --keep hands the throwaway HOME back for that one readlink, then it goes.
 	@if ! grep -qi opensuse /etc/os-release 2>/dev/null; then \
 	  echo "!! not openSUSE — skipping the hermetic --links-only run (bootstrap.sh refuses to"; \
 	  echo "   run off-distro by design; CI still enforces it in .github/workflows/bootstrap.yml)"; \
 	  exit 0; \
 	fi; \
-	set -u; \
-	tmp=$$(mktemp -d) || exit 1; \
-	trap 'rm -rf "$$tmp"' EXIT; \
-	mkdir -p "$$tmp/.config/tmux/plugins/tpm"; \
-	echo ":: bootstrap --links-only into $$tmp"; \
-	env -u XDG_CONFIG_HOME HOME="$$tmp" BLIB_SU=true ./bootstrap.sh --links-only >"$$tmp/.log" 2>&1 || { \
-	  echo "!! bootstrap --links-only failed:"; sed 's/^/   | /' "$$tmp/.log"; exit 1; }; \
-	rc=0; \
-	for l in .config/zsh/loader.zsh .config/zsh/80-os.zsh .config/zsh/os.capabilities \
-	         .config/starship.toml .config/lazygit/config.yml .config/nvim .vimrc \
-	         .gitconfig .config/tmux/os.conf .config/git/os.gitconfig; do \
-	  test -L "$$tmp/$$l" || { echo "MISSING symlink: $$l"; rc=1; }; \
-	done; \
-	test -e "$$tmp/.config/zsh/loader.zsh" || { echo "loader.zsh is dangling"; rc=1; }; \
-	grep -q "dotfiles-managed v4" "$$tmp/.zshrc" || { echo "~/.zshrc not managed"; rc=1; }; \
-	grep -q "source .*loader.zsh" "$$tmp/.zshrc" || { echo "~/.zshrc does not source the loader"; rc=1; }; \
+	set -u; out=$$(BLIB_SU=true core/scripts/check-links.sh --keep \
+	  --require .config/zsh/80-os.zsh --require .config/zsh/os.capabilities \
+	  --require .config/tmux/os.conf --require .config/git/os.gitconfig 2>&1); rc=$$?; \
+	printf '%s\n' "$$out"; \
+	tmp=$$(printf '%s\n' "$$out" | sed -n 's/.*kept the throwaway HOME at //p' | tail -n1); \
+	trap 'test -n "$$tmp" && rm -rf "$$tmp"' EXIT; \
+	test $$rc -eq 0 || exit $$rc; \
 	want=os/opensuse.capabilities; \
 	grep -qi tumbleweed /etc/os-release || want=os/opensuse.leap.capabilities; \
 	got=$$(readlink "$$tmp/.config/zsh/os.capabilities" 2>/dev/null); \
 	case "$$got" in \
-	*/$$want) ;; \
-	*) echo "os.capabilities -> $${got:-nothing}, expected .../$$want for this flavor"; rc=1 ;; \
-	esac; \
-	test $$rc -eq 0 && echo ":: symlink graph OK" || exit 1
+	*/$$want) echo ":: os.capabilities -> $$want (this flavor)" ;; \
+	*) echo "os.capabilities -> $${got:-nothing}, expected .../$$want for this flavor"; exit 2 ;; \
+	esac
 
 # The repo's own suite, and nothing else — no linters, no network, no privileges. `make
 # test` below is the pre-push gate that also runs it; CI runs THIS target, so the gate's
