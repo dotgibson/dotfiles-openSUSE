@@ -142,8 +142,8 @@ completed but one or more *optional* tools failed to install — the failure led
 printed at the end with a retry command for each, so a lossy install is never silently
 reported as a clean one.
 
-Escalation is via `sudo` by default. On a box with no `sudo`, set `BLIB_SU=""` when
-running as root, or `BLIB_SU=doas`.
+Escalation is resolved by Core's `blib_resolve_su`: root runs directly, else `sudo`,
+else `doas`. Set `BLIB_SU=""` or `BLIB_SU=doas` to override the probe.
 
 > **Windows / `\\wsl.localhost` checkouts:** run `git config core.fileMode false` in
 > your clone. See [CONTRIBUTING.md](CONTRIBUTING.md) — without it, git reports every
