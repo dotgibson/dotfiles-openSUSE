@@ -5,52 +5,21 @@
 # dotfiles. Idempotent — safe to re-run. This is the OS-NATIVE layer; Core
 # (zsh/tmux/nvim/git) is vendored under core/ and symlinked via core/lib/bootstrap-lib.sh.
 #
-# Run `./bootstrap.sh --help` for usage. That text lives in usage() below rather than
-# in this header: the previous `sed -n '2,17p' "$0"` coupled --help to this comment
-# block's exact line numbers, so any edit up here silently truncated the help output.
+# THE DRIVER FORM (dotgibson/dotfiles-core#976, #986). The shared half of a bootstrap — the
+# flags, the escalator, the sudo keepalive, the Core symlink surface, the OS overlays, the
+# managed ~/.zshrc loader, the login shell, the closing report — is core/lib/bootstrap-lib.sh
+# :: blib_main, ONE definition instead of a copy per repo. This file declares what it is —
+# including the exit-code contract that is this repo's own — defines the hooks that are
+# genuinely openSUSE's (the guard, the zypper provisioning, the Leap capability re-link, the
+# closing hints, the repo flags), and hands over. `--help` prints both halves.
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-usage() {
-  cat <<'EOF'
-Usage:
-  ./bootstrap.sh                     # full: zypper packages + extras + symlinks
-  ./bootstrap.sh --links-only        # just (re)create symlinks (no zypper)
-  ./bootstrap.sh --dry-run           # preview every change; mutate nothing
-  ./bootstrap.sh --no-flatpak        # skip the Flathub remote (auto-skipped on WSL)
-  ./bootstrap.sh --only zsh,nvim     # link ONLY these Core module groups
-  ./bootstrap.sh --skip tmux         # link everything EXCEPT these groups
-  ./bootstrap.sh --tolerate-failures # exit 0 even if optional tools failed (for CI)
-
-Module groups (for --only/--skip): zsh nvim tmux git prompt tools
-  They affect the WIRING steps only, never package provisioning. Combine with
-  --links-only to re-wire a subset of configs without touching zypper.
-  --only and --skip are mutually exclusive.
-
-Exit codes:
-  0  everything requested succeeded
-  1  bad arguments, or a precondition failed (not openSUSE, core/ missing,
-     packages.txt unreadable, no way to escalate privileges)
-  2  bootstrap completed but one or more OPTIONAL tools failed to install; the
-     failure ledger is printed at the end with a retry hint for each
-
-Environment:
-  BLIB_SU   privilege escalator. Resolved by Core's blib_resolve_su when unset: root
-            runs directly, else sudo, else doas. Set BLIB_SU="" or BLIB_SU=doas to
-            override the probe (minimal containers often have no sudo).
-  BLIB_DRY  set by --dry-run; makes the Core link helpers plan-only.
-EOF
-}
-
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Read by blib_main in the sourced lib (shellcheck does not follow into it).
+# shellcheck disable=SC2034
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
-LINKS_ONLY=0
 DO_FLATPAK=1
-DRY_RUN=0
-TOLERATE=0
-# --only/--skip are validated by the shared lib (blib_select), which is sourced
-# AFTER this loop — so capture the raw values now and apply them below.
-ONLY_RAW="" SKIP_RAW="" ONLY_SEEN=0 SKIP_SEEN=0
 
 # Neovim version floor. nvim-treesitter's `main` branch (core/nvim, lazy-lock.json) does
 # not merely prefer 0.12 — it will not load below it. Named once here because it is
@@ -59,33 +28,6 @@ ONLY_RAW="" SKIP_RAW="" ONLY_SEEN=0 SKIP_SEEN=0
 # _dotfiles_nvim_meets_floor reads; test/check-packages.sh fails if the two drift apart.
 # Bump it only when Core's floor actually moves.
 NEOVIM_FLOOR="0.12.0"
-
-while [[ $# -gt 0 ]]; do case "$1" in
-  --links-only) LINKS_ONLY=1 ;;
-  --no-flatpak) DO_FLATPAK=0 ;;
-  --dry-run) DRY_RUN=1 ;;
-  --tolerate-failures) TOLERATE=1 ;;
-  --only) [[ $# -ge 2 ]] || { echo "--only requires module names, e.g. --only zsh,nvim" >&2; exit 1; }; ONLY_RAW="$2"; ONLY_SEEN=1; shift ;;
-  --only=*) ONLY_RAW="${1#*=}"; ONLY_SEEN=1 ;;
-  --skip) [[ $# -ge 2 ]] || { echo "--skip requires module names, e.g. --skip tmux" >&2; exit 1; }; SKIP_RAW="$2"; SKIP_SEEN=1; shift ;;
-  --skip=*) SKIP_RAW="${1#*=}"; SKIP_SEEN=1 ;;
-  -h | --help)
-    usage
-    exit 0
-    ;;
-  *)
-    echo "unknown arg: $1" >&2
-    echo "try: ./bootstrap.sh --help" >&2
-    exit 1
-    ;;
-  esac; shift; done
-
-# --only and --skip describe the same selection from opposite ends; applying both
-# leaves the resulting module set undefined at this layer. Reject rather than guess.
-if ((ONLY_SEEN && SKIP_SEEN)); then
-  echo "--only and --skip are mutually exclusive — pick one" >&2
-  exit 1
-fi
 
 # ── core/ subtree present? (inline: can't source a lib out of core/ before this) ─
 # Validate the SPECIFIC paths we depend on (zsh modules + the two libs sourced
@@ -110,6 +52,79 @@ source "$DOTFILES/core/lib/ux.sh"
 # shellcheck source=core/lib/bootstrap-lib.sh
 source "$DOTFILES/core/lib/bootstrap-lib.sh"
 
+
+# ── what this repo is (read by blib_main) ─────────────────────────────────────
+# shellcheck disable=SC2034
+BOOTSTRAP_NAME="openSUSE"
+# shellcheck disable=SC2034
+BOOTSTRAP_OS=opensuse # → blib_link_os_layer: os/opensuse.{zsh,conf,gitconfig,capabilities}
+# THE EXIT-CODE CONTRACT, kept: a run that completes but loses an optional tool exits 2,
+# always, so a caller (or CI) can tell a clean install from a lossy one — no --strict
+# needed. --tolerate-failures waives it (bootstrap_flag flips the default off; the driver
+# re-reads it after the parse). Documented in --help and the README; the driver only
+# carries it.
+# shellcheck disable=SC2034
+BOOTSTRAP_STRICT_DEFAULT=1
+# shellcheck disable=SC2034
+BOOTSTRAP_FAIL_EXIT=2
+# shellcheck disable=SC2034
+BLIB_STRICT_WHY="this repo exits 2 whenever an optional install did not complete; --tolerate-failures waives it"
+
+# ── hooks (called by blib_main, in its order; shellcheck cannot see that) ─────
+# shellcheck disable=SC2329
+bootstrap_usage() {
+  cat <<'EOF'
+bootstrap.sh — provision an openSUSE box (Tumbleweed or Leap; Workstation or WSL) and wire
+up dotfiles. Idempotent: safe to re-run.
+
+  --no-flatpak          skip the Flathub remote (auto-skipped on WSL)
+  --tolerate-failures   exit 0 even if optional tools failed (for CI)
+
+--only and --skip are mutually exclusive here: they describe the same selection from
+opposite ends, and applying both leaves the module set undefined at this layer.
+
+Exit codes:
+  0  everything requested succeeded
+  1  a precondition failed (not openSUSE, core/ missing, packages.txt unreadable,
+     no way to escalate privileges)
+  2  bootstrap completed but one or more OPTIONAL tools failed to install — the
+     failure ledger is printed at the end with a retry hint for each; also the
+     driver's code for a usage error (unknown flag), which is told apart by its text
+
+Environment:
+  BLIB_SU   privilege escalator. Resolved by Core's blib_resolve_su when unset: root
+            runs directly, else sudo, else doas. Set BLIB_SU="" or BLIB_SU=doas to
+            override the probe (minimal containers often have no sudo).
+EOF
+}
+# shellcheck disable=SC2329
+bootstrap_flag() {
+  case "$1" in
+  --no-flatpak) DO_FLATPAK=0 ;;
+  --tolerate-failures) BOOTSTRAP_STRICT_DEFAULT=0 ;;
+  *) return 1 ;;
+  esac
+  return 0
+}
+# shellcheck disable=SC2329
+bootstrap_guard() {
+  if [[ -n "${BLIB_ONLY:-}" && -n "${BLIB_SKIP:-}" ]]; then
+    echo "--only and --skip are mutually exclusive — pick one" >&2
+    exit 1
+  fi
+  # ── sanity: confirm we're on openSUSE (matches Tumbleweed AND Leap) ─────────
+  if ! grep -qi opensuse /etc/os-release 2>/dev/null; then
+    echo "This bootstrap targets openSUSE. /etc/os-release doesn't look like openSUSE." >&2
+    exit 1
+  fi
+  # wsl.conf lives in provision(), so a links-only run on WSL leaves systemd off. Core's
+  # 55-maint.zsh gates its systemd user timer on /run/systemd/system, so the maintenance
+  # timer would silently never install. Say so rather than let it be a mystery later.
+  if ((BLIB_LINKS_ONLY)) && ((IS_WSL)) && [[ ! -f /etc/wsl.conf ]]; then
+    blib_warn "--links-only skips /etc/wsl.conf; without it WSL has no systemd and Core's maintenance timer won't install. Run a full bootstrap once."
+  fi
+}
+
 # ── PATH prelude: make the presence guards below tell the TRUTH ───────────────
 # bootstrap runs in BASH, before any Core shell exists, so the user-local bindirs the
 # installs below WRITE INTO are not on PATH yet — ~/.local/bin, ~/.cargo/bin and GOBIN
@@ -128,46 +143,15 @@ source "$DOTFILES/core/lib/bootstrap-lib.sh"
 # dotgibson/dotfiles-core#425; adopting it retires the fork (dotgibson/dotfiles-core#748).
 #
 # It resolves CARGO_HOME and GOBIN/GOPATH rather than hard-coding them, and adds only
-# directories that EXIST — so it is called AGAIN inside provision() once the installers
-# have created them. See there.
-blib_user_bindirs_on_path
-
-# --dry-run: BLIB_DRY makes the Core link helpers (blib_link/blib_seed/…) print their
-# plan and change nothing. It does NOT cover zypper — package provisioning is gated
-# separately in main() so a preview never touches the system.
-if ((DRY_RUN)); then export BLIB_DRY=1; fi
-
-# Apply any --only/--skip module selection now the validator (blib_select) exists;
-# it aborts on a malformed selector or an unknown group.
-if ((ONLY_SEEN)); then blib_select --only "$ONLY_RAW"; fi
-if ((SKIP_SEEN)); then blib_select --skip "$SKIP_RAW"; fi
+# directories that EXIST — blib_main runs it before any hook, and provision() calls it
+# AGAIN once the installers have created them. See there.
 
 # ── failure ledger ────────────────────────────────────────────────────────────
-# Package/tool installs here are deliberately best-effort: one unavailable crate must
-# not abort a 5-minute provision. But "best-effort" previously meant `|| true`, so a
-# run that lost doggo, carapace, sesh, yq, op AND half of packages.txt still printed
-# "bootstrap complete" and exited 0 — the operator had no signal at all. Record every
-# soft failure here instead, print them together at the end, and exit 2 so a caller
-# (or CI) can tell a clean install from a lossy one.
-#
-# The ledger is Core's: _note_fail is a thin shim over blib_note_fail (records into
-# BLIB_FAILED and warns at the moment it happens, so a miss is visible in the scrollback
-# and not only in the closing tally), and _report_failures wraps blib_failures_report —
-# which also carries the failures the shared lib records ITSELF (the tpm clone,
-# blib_install_system_file), previously dropped. The exit code stays 2 and
-# --tolerate-failures keeps its meaning; those are this repo's contract, not the lib's.
+# Package/tool installs here are deliberately best-effort: one unavailable crate must not
+# abort a 5-minute provision. Every soft failure is recorded via Core's ledger — _note_fail
+# is a thin shim over blib_note_fail, which warns at the moment it happens — and the driver
+# prints the tally at the end and applies this repo's exit-2 contract (declared above).
 _note_fail() { blib_note_fail "$@"; }
-
-_report_failures() {
-  blib_failures_report && return 0
-  blib_warn "the rest of the box is wired and usable"
-  if ((TOLERATE)); then
-    blib_warn "--tolerate-failures set — exiting 0 anyway"
-    return 0
-  fi
-  blib_warn "re-run ./bootstrap.sh after fixing the above, or run the printed commands by hand"
-  return 2
-}
 
 # ── privilege escalation ──────────────────────────────────────────────────────
 # Honor Core's documented BLIB_SU contract (core/lib/bootstrap-lib.sh) instead of
@@ -182,27 +166,6 @@ _priv() {
   if [[ -n "$su" ]]; then "$su" "$@"; else "$@"; fi
 }
 
-# Resolving the escalator and keeping sudo's timestamp warm are Core's blib_resolve_su
-# and blib_sudo_keepalive_start / _stop (core/lib/bootstrap-lib.sh): the first runs right
-# after the openSUSE guard below, the pair inside main() around provision(). The old
-# one-shot `sudo -v` here primed the cache once and then let it expire mid-cargo-build —
-# the invisible-prompt hang the keepalive exists to prevent.
-
-# ── sanity: confirm we're on openSUSE (matches Tumbleweed AND Leap) ───────────
-if ! grep -qi opensuse /etc/os-release 2>/dev/null; then
-  echo "This bootstrap targets openSUSE. /etc/os-release doesn't look like openSUSE." >&2
-  exit 1
-fi
-
-# blib_resolve_su, not a hand-rolled probe: it decides "root" from $EUID, pins the ABSOLUTE
-# path of sudo or doas, and honours an explicit BLIB_SU= from the caller (the env contract
-# above; CI's --links-only leg sets it empty). --require only when packages will actually
-# be installed: wiring symlinks and a dry run need no privileges.
-if ((LINKS_ONLY)) || ((DRY_RUN)); then
-  blib_resolve_su || true
-else
-  blib_resolve_su --require || exit 1
-fi
 
 IS_WSL=0
 if blib_is_wsl; then IS_WSL=1; fi
@@ -644,11 +607,19 @@ provision() {
   fi
 }
 
-wire_links() {
-  # The shared symlink surface + the openSUSE OS overlays + the managed .zshrc
-  # loader + the default-login-shell switch all live in core/lib/bootstrap-lib.sh.
-  blib_link_core "$DOTFILES" "$CONFIG"
-  blib_link_os_layer "$DOTFILES" "$CONFIG" opensuse
+# The driver never fakes bootstrap_provision under --dry-run; this report-only hook says
+# what a full run would do instead.
+# shellcheck disable=SC2329
+bootstrap_check() {
+  [[ "${BLIB_DRY:-0}" != 0 ]] || return 0
+  blib_say "(dry run) would provision zypper packages from install/packages.txt, then the upstream/cargo/go tool set"
+}
+
+# shellcheck disable=SC2329
+bootstrap_provision() { provision; }
+
+# shellcheck disable=SC2329
+bootstrap_wire_pre_loader() {
   # ── the capability declaration's TIER ────────────────────────────────────────
   # blib_link_os_layer has just linked os/opensuse.capabilities, which is TUMBLEWEED's.
   # This repo serves Leap too, and the two upgrade with different verbs — `dup` vs `up`,
@@ -666,51 +637,21 @@ wire_links() {
     blib_say "Leap detected — using the Leap capability declaration (zypper up, unattended upgrades permitted)"
     blib_link "$DOTFILES/os/opensuse.leap.capabilities" "$CONFIG/zsh/os.capabilities"
   fi
-  # shellcheck disable=SC2119  # no args is intentional — writes the default module set
-  blib_write_zshrc_loader
-  blib_set_login_shell
-  # Core's own tally (N linked · M seeded · K backed up · J skipped), which prefixes
-  # "(dry run)" automatically under BLIB_DRY. Replaces a hand-rolled one-liner that
-  # reported nothing about what actually changed.
-  blib_wire_summary
-  blib_ok "symlinks wired$(blib_selected_note)"
 }
 
-main() {
-  if ((DRY_RUN)); then
-    blib_warn "DRY RUN — no packages will be installed and no files will be written"
-  fi
-
-  if ((LINKS_ONLY)); then
-    # wsl.conf lives in provision(), so a links-only run on WSL leaves systemd off.
-    # Core's 55-maint.zsh gates its systemd user timer on /run/systemd/system, so the
-    # maintenance timer would silently never install. Say so rather than let it be a
-    # mystery months later.
-    if ((IS_WSL)) && [[ ! -f /etc/wsl.conf ]]; then
-      blib_warn "--links-only skips /etc/wsl.conf; without it WSL has no systemd and Core's maintenance timer won't install. Run a full bootstrap once."
+# What only this repo knows at the end: the two hints under a non-empty tally. The driver
+# prints the tally, the "finished WITH the misses above" line, and applies the exit code.
+# shellcheck disable=SC2329
+bootstrap_closing() {
+  if (($1)); then
+    blib_warn "the rest of the box is wired and usable"
+    if ((BOOTSTRAP_STRICT_DEFAULT)); then
+      blib_warn "re-run ./bootstrap.sh after fixing the above, or run the printed commands by hand"
+    else
+      blib_warn "--tolerate-failures set — exiting 0 anyway"
     fi
-  elif ((DRY_RUN)); then
-    blib_say "(dry run) would provision zypper packages from install/packages.txt, then the upstream/cargo/go tool set"
-  else
-    trap 'blib_sudo_keepalive_stop' EXIT
-    blib_sudo_keepalive_start || {
-      echo "sudo authentication failed — cannot provision packages." >&2
-      exit 1
-    }
-    provision
-    blib_sudo_keepalive_stop
   fi
-
-  wire_links
-
-  local rc=0
-  _report_failures || rc=$?
-  if ((rc == 0)); then
-    blib_ok "openSUSE bootstrap complete — open a new shell or: exec zsh"
-  else
-    blib_warn "openSUSE bootstrap finished WITH FAILURES (see above) — shell is still usable: exec zsh"
-  fi
-  return "$rc"
+  return 0
 }
 
-main "$@"
+blib_main "$@"
