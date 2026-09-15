@@ -5,9 +5,12 @@ for the universal aliases reference (modern CLI, git, safety nets) that applies 
 
 > **Tumbleweed vs Leap:** Use `zdup` for Tumbleweed (rolling distribution upgrade),
 > use `zup` for Leap (stable package updates). Getting this wrong causes a half-upgrade.
-> **Transactional edition (MicroOS / Aeon / Kalpa):** `zypper` is refused on the read-only
-> root, so `zdup`/`zin`/`zrm` do nothing there — use `sudo transactional-update dup` and
-> `sudo transactional-update -n pkg in|rm …`, then reboot to apply (Core's `up` says so).
+> **Transactional edition (MicroOS / Aeon / Kalpa):** `zypper in|rm|dup` is refused on the
+> read-only root, so when the linked capability declaration says `PROVISIONER=transactional`
+> the same names expand to the snapshot verbs instead (see the second table) — every one
+> carries `--continue`, so a pending snapshot is never silently dropped. Nothing reboots for
+> you: the change is live after `sudo systemctl reboot`, which Core's `up` and the
+> shell-start nudge say.
 
 ## Package Management (zypper)
 
@@ -22,6 +25,15 @@ for the universal aliases reference (modern CLI, git, safety nets) that applies 
 | `zwhat` | `zypper search --provides` (what provides a file/command) |
 | `zinfo` | `zypper info`                                             |
 | `zlr`   | `zypper repos` (list configured repositories)             |
+
+On the transactional edition only (the declaration linked by `bootstrap.sh` says so):
+
+| Alias  | Expands To                                                                 |
+| ------ | -------------------------------------------------------------------------- |
+| `zin`  | `sudo transactional-update -n --continue pkg in` (into the next snapshot)  |
+| `zrm`  | `sudo transactional-update -n --continue pkg rm`                           |
+| `zdup` | `sudo transactional-update --continue dup` (a Tumbleweed base — staged)    |
+| `zup`  | prints why Leap's verb has no meaning here and exits 1                     |
 
 ## Snapshots (snapper)
 

@@ -242,6 +242,24 @@ if grep -qE "^alias zdup=.*zypper dup" os/opensuse.zsh; then
 else
   note_fail "os/opensuse.zsh: no 'zdup' alias for 'zypper dup' — bootstrap.sh's own output tells a Tumbleweed user to run 'zdup'"
 fi
+# …and the transactional edition overrides them, behind Core's accessor, every mutating
+# call carrying --continue. The mutable lines above stay (the grep is anchored at column
+# 1; the overrides are indented inside the branch), so a box whose Core did not load
+# still has the zypper spellings.
+say "os/opensuse.zsh overrides the mutating aliases on the transactional edition"
+if grep -qE '_core_cap PROVISIONER.*==[[:space:]]*transactional' os/opensuse.zsh; then
+  printf '  %s\n' "gated on the declaration (_core_cap PROVISIONER)"
+else
+  note_fail "os/opensuse.zsh no longer asks Core's _core_cap whether PROVISIONER is transactional — the snapshot-verb aliases have no gate (or re-probe the host, which is bootstrap.sh's job)"
+fi
+for pair in "zin:pkg in" "zrm:pkg rm" "zdup:dup"; do
+  a="${pair%%:*}" verb="${pair#*:}"
+  if grep -qE "^[[:space:]]+alias $a='sudo transactional-update .*--continue.* $verb'" os/opensuse.zsh; then
+    printf '  %-5s %s\n' "$a" "-> transactional-update --continue $verb"
+  else
+    note_fail "os/opensuse.zsh: no transactional override of '$a' as 'sudo transactional-update … --continue … $verb' — without --continue each call opens its snapshot from the BOOTED one and drops the pending snapshot"
+  fi
+done
 
 # ── 6. the WSL predicate is Core's, not this layer's ─────────────────────────
 # os/opensuse.zsh gates its WSL-only aliases (open/xdg-open/cdwin) on a WSL question that
