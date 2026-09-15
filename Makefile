@@ -309,9 +309,10 @@ check: lint ## lint + a hermetic --links-only run against a throwaway HOME
 	@# the numbered zsh fragments, the seeded sesh.toml, the managed ~/.zshrc — is the
 	@# script's own default; --require adds only what THIS repo's OS layer wires on top
 	@# (core/lib/bootstrap-lib.sh :: blib_link_os_layer). Exit 2 is the drift signal.
-	@# The flavor assertion stays: check-flavors.sh proves the two declarations differ only
+	@# The flavor assertion stays: check-flavors.sh proves the three declarations differ only
 	@# where they may and that the relink mechanism exists; this proves which one THIS box
-	@# actually got. --keep hands the throwaway HOME back for that one readlink, then it goes.
+	@# actually got — the transactional edition by bootstrap.sh's own marker (the verb on
+	@# PATH beside a read-only /usr), not by ID, because MicroOS says ID_LIKE=tumbleweed. --keep hands the throwaway HOME back for that one readlink, then it goes.
 	@if ! grep -qi opensuse /etc/os-release 2>/dev/null; then \
 	  echo "!! not openSUSE — skipping the hermetic --links-only run (bootstrap.sh refuses to"; \
 	  echo "   run off-distro by design; CI still enforces it in .github/workflows/bootstrap.yml)"; \
@@ -326,6 +327,7 @@ check: lint ## lint + a hermetic --links-only run against a throwaway HOME
 	test $$rc -eq 0 || exit $$rc; \
 	want=os/opensuse.capabilities; \
 	grep -qi tumbleweed /etc/os-release || want=os/opensuse.leap.capabilities; \
+	if command -v transactional-update >/dev/null 2>&1 && [ ! -w /usr ]; then want=os/opensuse.microos.capabilities; fi; \
 	got=$$(readlink "$$tmp/.config/zsh/os.capabilities" 2>/dev/null); \
 	case "$$got" in \
 	*/$$want) echo ":: os.capabilities -> $$want (this flavor)" ;; \
