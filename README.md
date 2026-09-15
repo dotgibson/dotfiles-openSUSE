@@ -25,7 +25,7 @@
   <h3 align="center">🦎 dotfiles-openSUSE</h3>
 
   <p align="center">
-    The openSUSE OS-native layer — zypper, Tumbleweed + Leap, over the shared Core.
+    The openSUSE OS-native layer — zypper, Tumbleweed + Leap + the transactional edition, over the shared Core.
     <br />
     <a href="https://dotgibson.github.io/dotfiles-web/docs"><strong>Explore the docs »</strong></a>
     <br />
@@ -62,7 +62,7 @@
 
 [![dotfiles-openSUSE — terminal demo][product-screenshot]](https://dotgibson.github.io/dotfiles-web)
 
-**`dotfiles-openSUSE` is the OS-native layer for openSUSE** (Tumbleweed + Leap) —
+**`dotfiles-openSUSE` is the OS-native layer for openSUSE** (Tumbleweed, Leap and the transactional MicroOS / Aeon / Kalpa edition) —
 one node in a cross-platform dotfiles system. The shared **Core** (zsh, tmux,
 Neovim, git, starship, mise) is authored once in
 [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core) and vendored under
@@ -101,7 +101,8 @@ No new languages — this layer is shell and package config over
 
 ### Prerequisites
 
-An openSUSE box (Tumbleweed or Leap, desktop or a WSL image) and **Git**.
+An openSUSE box (Tumbleweed, Leap or the transactional edition — MicroOS / Aeon / Kalpa;
+desktop or a WSL image) and **Git**.
 Everything else — zsh, tmux, nvim, starship, and the modern-CLI stack — is
 provisioned by `bootstrap.sh`.
 
@@ -144,6 +145,18 @@ reported as a clean one.
 
 Escalation is resolved by Core's `blib_resolve_su`: root runs directly, else `sudo`,
 else `doas`. Set `BLIB_SU=""` or `BLIB_SU=doas` to override the probe.
+`BOOTSTRAP_TOLERATE_FAILURES=1` is `--tolerate-failures` for a caller that cannot pass a
+flag (CI's stubbed run).
+
+**Transactional edition (MicroOS / Aeon / Kalpa).** The root is read-only and `zypper in`
+is refused, so `bootstrap.sh` detects the host (`transactional-update` on PATH beside a
+read-only `/usr` — not the ID, which says `ID_LIKE=…tumbleweed`), links the
+`os/opensuse.microos.capabilities` declaration, and transacts the whole package list into
+ONE new snapshot. **A fresh box bootstraps twice:** the first run ends with *"N package(s)
+transacted into the next snapshot — reboot to apply, then re-run ./bootstrap.sh once"*, the
+reboot makes the snapshot live, and the second run builds the cargo/go tools against it and
+finds everything else already in place. Upgrades are `sudo transactional-update dup`, and
+Core's `up` and shell-start nudge say "staged — reboot to apply" instead of counting.
 
 > **Windows / `\\wsl.localhost` checkouts:** run `git config core.fileMode false` in
 > your clone. See [CONTRIBUTING.md](CONTRIBUTING.md) — without it, git reports every
@@ -160,8 +173,12 @@ prompt — comes from vendored Core; this repo owns the openSUSE specifics:
 - `bootstrap.sh` — `zypper` provision + Core/OS symlink wiring (idempotent)
 - `install/packages.txt` — the `zypper` package list (modern CLI stack)
 - `os/opensuse.zsh` — clipboard + package-manager aliases → `~/.config/zsh/80-os.zsh`
+- `os/opensuse.capabilities`, `os/opensuse.leap.capabilities`,
+  `os/opensuse.microos.capabilities` — what Core may run here, per edition; `bootstrap.sh`
+  links the one this box is
 - `test/` — the repo's own suite: is the package list still installable, and do the
-  Tumbleweed and Leap capability declarations still differ in only the two ways they may?
+  Tumbleweed, Leap and transactional capability declarations still differ in only the
+  ways they may?
 - `core/` — vendored from `dotfiles-core` (read-only here; edit upstream)
 
 The things that actually bite on openSUSE — the Tumbleweed `dup` vs Leap `up`

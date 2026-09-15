@@ -6,9 +6,9 @@ name: bootstrap
 
 # The filter is the set of inputs that can change this test's OUTCOME.
 #
-# bootstrap.sh / core/** / os/** / ssh/** are exercised today: the reusable's two jobs
-# are `lint` and `links-only`, and blib_link_core wires core/ssh/config during a links-only
-# run. The self-reference is here on purpose — a change to this caller (image, prep,
+# bootstrap.sh / core/** / os/** / ssh/** are exercised today: the reusable's jobs are
+# `lint`, `links-only` and (on the transactional leg below) the stubbed provision, and
+# blib_link_core wires core/ssh/config during a links-only run. The self-reference is here on purpose — a change to this caller (image, prep,
 # inputs) must re-run the test it configures.
 #
 # install/** and wsl/** are FORWARD-LOOKING, not currently load-bearing: `--links-only`
@@ -120,3 +120,39 @@ jobs:
       packages_check: zypper --non-interactive install --dry-run --allow-downgrade
       # packages_file is left at its default (install/packages.txt) — this repo's list
       # needs no pre-filtering, unlike dotfiles-Debian's per-distro annotations.
+
+  # ── the transactional edition (MicroOS / Aeon / Kalpa), #191 ────────────────────────
+  # A SECOND LEG, SAME IMAGE, ONE DIFFERENCE: `provisioner: transactional` forces the staging
+  # branch of bootstrap.sh inside the reusable's provision-stub job. A container is not the
+  # host — the Tumbleweed image has a writable /usr and no transactional-update — so without
+  # the seam the stubbed run walks the mutable zypper path and the snapshot code this repo
+  # grew for MicroOS is never executed (dotfiles-core NON-MUTABLE-HOST-PROPOSAL.md §4.4, R6,
+  # measured). With it, Core exports BOOTSTRAP_PROVISIONER=transactional into the run, shims
+  # transactional-update/snapper/btrfs beside zypper, makes the `rpm` shim answer `-q` with 1
+  # so the "already installed" filter keeps its names, and FAILS the leg unless the closing
+  # line says "reboot to apply". That grep is the leg's assertion.
+  #
+  # Same dated tag as above, on purpose: MicroOS reads Tumbleweed's archive, and Renovate's
+  # regex manager (renovate.json) bumps every `image:` match in this file in one PR. No
+  # packages_check here — the leg above already resolves the same list against the same
+  # repos; a second answer would only cost minutes.
+  #
+  # WHY prep ENDS WITH AN export. This repo's contract is exit 2 whenever an optional tool
+  # did not install, and under the reusable's shims one always misses: carapace resolves its
+  # RPM URL from the GitHub API through `curl`, and the curl stub answers nothing (R6
+  # measured the leg at exit 2 with the closing line printed). The stubbed run takes no
+  # arguments, so --tolerate-failures cannot be passed; `prep:` is the one input the job
+  # evaluates in the SAME shell as ./bootstrap.sh, and bootstrap.sh honours
+  # BOOTSTRAP_TOLERATE_FAILURES=1 as that flag's twin (see its --help). If the reusable ever
+  # runs prep in a subshell the export is lost and this leg goes RED on exit 2 — loud, never
+  # silently green off the wrong branch.
+  #
+  # The weekly unstubbed real-bootstrap sweep in dotfiles-core SKIPS this leg (VM-only: the
+  # staging verb needs a booted host) and .github/core-gates.txt says so.
+  transactional:
+    uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v7
+    with:
+      image: registry.opensuse.org/opensuse/tumbleweed:20260914
+      prep: 'for i in 1 2 3 4 5; do if zypper --non-interactive --gpg-auto-import-keys refresh && zypper --non-interactive --gpg-auto-import-keys install bash zsh; then break; fi; echo "zypper prep attempt $i failed (mirror timeout?), retrying in $((i*10))s..." >&2; sleep $((i*10)); done; command -v zsh >/dev/null || { echo "zsh still not installed after 5 attempts" >&2; exit 1; }; export BOOTSTRAP_TOLERATE_FAILURES=1'
+      provision_stub: true
+      provisioner: transactional

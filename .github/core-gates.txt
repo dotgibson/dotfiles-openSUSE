@@ -1,0 +1,18 @@
+# .github/core-gates.txt — how this repo satisfies dotfiles-core's reusable gates.
+#
+# ONE LINE PER GATE THIS REPO DOES NOT CALL. Anything that calls the reusable workflow is
+# derived from its own `uses:` line and needs no entry here (dotgibson/dotfiles-core#607).
+#
+#   <gate> own  <how it is satisfied here>
+#   <gate> none <why this repo does not need it>
+#
+# The `real-bootstrap` gate is not a reusable but the weekly unstubbed sweep, derived from
+# each repo's bootstrap-test.yml caller (dotgibson/dotfiles-core#1050). This repo has TWO
+# legs there: the mutable Tumbleweed one, which the sweep runs, and the transactional one
+# (`provisioner: transactional`), which it skips — a container has a writable /usr and no
+# transactional-update, so an unstubbed run would walk the mutable branch and read green off
+# the wrong code. While the mutable leg exists the register derives `sweep` and never reads
+# the line below; it is here so the VM-only status of the transactional path is declared
+# next to the other gates, and it becomes the answer if that mutable leg is ever dropped.
+
+real-bootstrap none the staging verb (transactional-update into a new snapshot, then a reboot) needs a booted MicroOS host; dotfiles-core's VM harness (research-nonmutable-vm.yml, r4=true) covers it on demand, and the transactional leg of bootstrap.yml exercises the path stubbed on every PR.

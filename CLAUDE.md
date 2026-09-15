@@ -9,7 +9,9 @@ vendors only what a machine actually runs.
 ## What this repo is
 
 `dotfiles-openSUSE` is the **OS-native layer for openSUSE** in an **eleven-repo dotfiles system** built on a three-layer
-model (Core → OS-native → Role). Stamped from the Fedora template (see `core/PORTING-MATRIX.md`). Two flavors with **different update commands** — Tumbleweed (rolling) uses `zypper dup`, Leap (stable) uses `zypper up`. Get this wrong and you half-update. Add the Packman repo for codecs.
+model (Core → OS-native → Role). Stamped from the Fedora template (see `core/PORTING-MATRIX.md`). Three editions with **different update commands** — Tumbleweed (rolling) uses `zypper dup`, Leap (stable) uses `zypper up`, and the transactional edition (MicroOS / Aeon / Kalpa) stages `transactional-update dup` into a new snapshot that a reboot applies. Get this wrong and you half-update. Add the Packman repo for codecs.
+
+The transactional edition is picked by a **host marker, not the ID** (`transactional-update` on PATH beside a read-only `/usr`; MicroOS says `ID_LIKE=…tumbleweed`), relinks `os/opensuse.microos.capabilities`, and transacts the package list in ONE `transactional-update -n --no-selfupdate --continue pkg in` — `--continue` on **every** call, or each call restarts from the booted snapshot and drops the pending one (measured). The run ends "reboot to apply, then re-run once". `BOOTSTRAP_PROVISIONER=transactional` forces the branch for CI.
 
 ## The rule that bites
 
@@ -30,11 +32,12 @@ What belongs **here** is only the OS-native layer: the `zypper` package list, cl
 ## Where things are
 
 - `os/opensuse.zsh` — clipboard + package-manager aliases for openSUSE
+- `os/opensuse.capabilities`, `os/opensuse.leap.capabilities`, `os/opensuse.microos.capabilities` — the three declarations; `test/check-flavors.sh` holds them to their declared deltas
 - `os/opensuse.conf`, `os/opensuse.gitconfig` — tmux + git OS overlays
 - `install/packages.txt` — openSUSE package names
 - `bootstrap.sh` — symlinks Core + OS files into place
 - `test/` — the repo's own suite (`make suite`, and `.github/workflows/test.yml`):
-  package-list hygiene/resolution, and the Tumbleweed-vs-Leap capability split
+  package-list hygiene/resolution, and the Tumbleweed / Leap / transactional capability split
 - `core/` — vendored Core (read-only here; edit upstream in dotfiles-core)
 
 ## `make` verbs are Core's, not this repo's

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # dotfiles-openSUSE/bootstrap.sh
 # ──────────────────────────────────────────────────────────────────────────────
-# Provision an openSUSE box (Tumbleweed or Leap; Workstation or WSL) and wire up
-# dotfiles. Idempotent — safe to re-run. This is the OS-NATIVE layer; Core
+# Provision an openSUSE box (Tumbleweed, Leap or the transactional edition — MicroOS /
+# Aeon / Kalpa; Workstation or WSL) and wire up dotfiles. Idempotent — safe to re-run. This is the OS-NATIVE layer; Core
 # (zsh/tmux/nvim/git) is vendored under core/ and symlinked via core/lib/bootstrap-lib.sh.
 #
 # THE DRIVER FORM (dotgibson/dotfiles-core#976, #986). The shared half of a bootstrap — the
@@ -74,8 +74,12 @@ BLIB_STRICT_WHY="this repo exits 2 whenever an optional install did not complete
 # shellcheck disable=SC2329
 bootstrap_usage() {
   cat <<'EOF'
-bootstrap.sh — provision an openSUSE box (Tumbleweed or Leap; Workstation or WSL) and wire
-up dotfiles. Idempotent: safe to re-run.
+bootstrap.sh — provision an openSUSE box (Tumbleweed, Leap or the transactional edition:
+MicroOS / Aeon / Kalpa; Workstation or WSL) and wire up dotfiles. Idempotent: safe to re-run.
+
+On the transactional edition packages go into a NEW snapshot and are live after a reboot:
+the run ends with "reboot to apply, then re-run once" — the second run builds the cargo/go
+tools against the new snapshot's toolchain.
 
   --no-flatpak          skip the Flathub remote (auto-skipped on WSL)
   --tolerate-failures   exit 0 even if optional tools failed (for CI)
@@ -95,6 +99,13 @@ Environment:
   BLIB_SU   privilege escalator. Resolved by Core's blib_resolve_su when unset: root
             runs directly, else sudo, else doas. Set BLIB_SU="" or BLIB_SU=doas to
             override the probe (minimal containers often have no sudo).
+  BOOTSTRAP_PROVISIONER=transactional
+            CI seam: take the transactional edition's branch on a box that is not one
+            (the reusable bootstrap-test.yml's `provisioner:` input exports it into its
+            stubbed run). Never needed on a real host — the marker is detected.
+  BOOTSTRAP_TOLERATE_FAILURES=1
+            the same waiver as --tolerate-failures, for a caller that cannot pass a flag
+            (the reusable's stubbed run takes no arguments; its `prep:` can export this).
 EOF
 }
 # shellcheck disable=SC2329
@@ -170,6 +181,30 @@ _priv() {
 IS_WSL=0
 if blib_is_wsl; then IS_WSL=1; fi
 
+# ── transactional edition? (MicroOS, Aeon, Kalpa) ─────────────────────────────
+# The root is read-only and transactional-update is the only installer: `zypper in` is
+# refused outright ("Transactional system detected", rc 5 — measured on MicroOS 20260911,
+# whose os-release says ID=opensuse-microos with ID_LIKE carrying opensuse-tumbleweed, so
+# the guard above and the Tumbleweed probe below both pass). Test the HOST, not the ID:
+# the verb exists and /usr cannot be written. Everything the transactional edition changes
+# hangs off this flag: the declaration it links, how packages are installed (into a new
+# snapshot, live after a reboot), and the closing line that says so.
+IS_TRANSACTIONAL=0
+if command -v transactional-update >/dev/null 2>&1 && [[ ! -w /usr ]]; then IS_TRANSACTIONAL=1; fi
+# CI's seam (R6): a container's /usr is writable and has no transactional-update, so the
+# stubbed-provision leg could never reach the snapshot path; BOOTSTRAP_PROVISIONER=transactional
+# forces it, with transactional-update shimmed.
+[[ "${BOOTSTRAP_PROVISIONER:-}" == transactional ]] && IS_TRANSACTIONAL=1
+TU_STAGED=0 # packages transacted into the next snapshot this run — the closing hint keys on it
+# CI's other seam, and why it exists next to this one: the reusable's provision-stub job runs
+# `./bootstrap.sh` with no arguments and fails on any non-zero exit, and under its shims the
+# carapace block cannot resolve a release URL (the curl stub answers nothing), which this
+# repo's exit-2 contract turns into a red leg (dotfiles-core NON-MUTABLE-HOST-PROPOSAL R6,
+# measured). `prep:` is the one thing the job evaluates in the same shell as the run, so the
+# transactional leg exports this there. Identical in effect to --tolerate-failures; the leg's
+# real assertion is the reusable's own grep for the "reboot to apply" closing line.
+[[ "${BOOTSTRAP_TOLERATE_FAILURES:-0}" == 1 ]] && BOOTSTRAP_STRICT_DEFAULT=0
+
 # ── zypper with retry ─────────────────────────────────────────────────────────
 # openSUSE's OSS mirror (cdn.opensuse.org) intermittently times out (curl error 28).
 # .github/workflows/bootstrap.yml already documents this and wraps its CI prep in a
@@ -201,6 +236,33 @@ zypper_retry() { # <zypper args...>
 zypper_install() {
   local -a pkgs=("$@")
   local rc=0
+  if ((IS_TRANSACTIONAL)); then
+    # One snapshot, not one per package: transactional-update takes ~20 s per transaction
+    # (measured) and, like zypper, aborts the whole install on one unknown name. The
+    # read-only repo cache answers `zypper se` on the running system, so drop the unknown
+    # names FIRST and transact once. Its options go BEFORE the command (-n here, not
+    # --non-interactive after `pkg in`), and `pkg in` passes the rest to zypper install.
+    # --continue on EVERY call: without it each transaction starts from the BOOTED
+    # snapshot and silently discards the pending one — measured: 47 packages went into
+    # snapshot 3, the next call opened snapshot 4 from snapshot 2, and the reboot booted
+    # 4 with none of them.
+    local -a avail=() p
+    for p in "${pkgs[@]}"; do
+      # already installed → nothing to transact (a re-run otherwise re-transacts the whole
+      # list into three more snapshots — measured on iteration 2, snapshots 6–8)
+      rpm -q "$p" >/dev/null 2>&1 && continue
+      zypper --non-interactive --quiet se --match-exact --type package "$p" >/dev/null 2>&1 && avail+=("$p") || {
+        echo "   skipped (unavailable on this box?): $p"
+        _note_fail "package '$p' — not available; check with: zypper se --provides $p"
+      }
+    done
+    ((${#avail[@]})) || return 0
+    _priv transactional-update -n --no-selfupdate --continue pkg in --no-recommends "${avail[@]}" || rc=$?
+    case $rc in
+    0 | 102 | 103 | 106) TU_STAGED=$((TU_STAGED + ${#avail[@]})); return 0 ;;
+    *) _note_fail "transactional-update pkg in failed (rc=$rc) — retry later: ${BLIB_SU-sudo} transactional-update -n --continue pkg in ${avail[*]}"; return 0 ;;
+    esac
+  fi
   zypper_retry --non-interactive install --no-recommends "${pkgs[@]}" || rc=$?
   # zypper's exit codes are not a simple 0/non-0: 102 (reboot needed), 103 (zypper
   # itself needs restarting) and 106 (a repo was unavailable but the install
@@ -297,7 +359,11 @@ provision() {
   # Upgrades are USER-driven (see README): Tumbleweed = `zdup` (zypper dup),
   # Leap = `zup` (zypper up). bootstrap only refreshes metadata so a re-run stays
   # fast and never triggers a surprise rolling upgrade mid-setup.
-  if grep -qi tumbleweed /etc/os-release; then
+  if ((IS_TRANSACTIONAL)); then
+    # A Tumbleweed base (ID_LIKE says so), so `dup` — but `zypper dup` is refused here
+    # ("Transactional system detected"); the snapshot verb stages it and a reboot applies.
+    blib_say "detected the transactional edition — system upgrades use 'sudo transactional-update dup' (staged; reboot to apply)"
+  elif grep -qi tumbleweed /etc/os-release; then
     blib_say "detected Tumbleweed — system upgrades use 'zdup' (zypper dup)"
   else
     blib_say "detected Leap — system upgrades use 'zup' (zypper up)"
@@ -370,7 +436,9 @@ provision() {
   # knows only that yazi is not on PATH and not at ~/.cargo/bin/yazi. A yazi installed
   # somewhere else entirely would trip this, and blaming zypper would then send the
   # operator down the wrong path.
-  if ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]]; then
+  if ((IS_TRANSACTIONAL)) && ((TU_STAGED)) && ! command -v yazi >/dev/null; then
+    blib_say "yazi is in the next snapshot — live after the reboot"
+  elif ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]]; then
     _note_fail "yazi — not on PATH and not at ~/.cargo/bin/yazi. Preferred fix: sudo zypper in yazi (it is packaged, and in install/packages.txt). Upstream alternative: cargo install --locked yazi-fm yazi-cli, which yields 'yazi' + 'ya'"
   fi
   # mise — polyglot runtime manager; activated in core/zsh/00-tools.zsh. Runtimes are
@@ -500,8 +568,18 @@ provision() {
         grep -o "\"browser_download_url\": *\"[^\"]*linux_${_cara_arch}\.rpm\"" |
         cut -d'"' -f4 | head -1)" || true
       if [[ -n "$_cara_url" ]]; then
-        _priv zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$_cara_url" >/dev/null ||
-          _note_fail "carapace: RPM install failed — retry later: ${BLIB_SU-sudo} zypper -n --no-gpg-checks install --allow-unsigned-rpm $_cara_url"
+        if ((IS_TRANSACTIONAL)); then
+          # a global zypper option (--no-gpg-checks) cannot ride `pkg in`; `run` executes
+          # the whole zypper command inside the new snapshot instead
+          if _priv transactional-update -n --no-selfupdate --continue run zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$_cara_url" >/dev/null; then
+            TU_STAGED=$((TU_STAGED + 1))
+          else
+            _note_fail "carapace: RPM transaction failed — retry later: ${BLIB_SU-sudo} transactional-update -n --continue run zypper -n --no-gpg-checks install --allow-unsigned-rpm $_cara_url"
+          fi
+        else
+          _priv zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$_cara_url" >/dev/null ||
+            _note_fail "carapace: RPM install failed — retry later: ${BLIB_SU-sudo} zypper -n --no-gpg-checks install --allow-unsigned-rpm $_cara_url"
+        fi
       else
         _note_fail "carapace: could not resolve the latest linux_${_cara_arch} RPM (offline? API rate-limited?) — see github.com/carapace-sh/carapace-bin/releases"
       fi
@@ -545,7 +623,11 @@ provision() {
   # and the refresh no longer auto-imports.
   if ! command -v op >/dev/null 2>&1; then
     blib_say "op (1Password CLI, official signed repo)"
-    if ! _priv rpm --import https://downloads.1password.com/linux/keys/1password.asc; then
+    # The rpmdb is read-only on the running snapshot ("can't create transaction lock on
+    # /usr/lib/sysimage/rpm/.rpm.lock" — measured); import inside the pending snapshot.
+    local -a _op_import=(rpm --import https://downloads.1password.com/linux/keys/1password.asc)
+    ((IS_TRANSACTIONAL)) && _op_import=(transactional-update -n --no-selfupdate --continue run "${_op_import[@]}")
+    if ! _priv "${_op_import[@]}"; then
       _note_fail "op — 1Password signing key import failed; repo NOT added (refusing to trust an unverified key). See https://developer.1password.com/docs/cli/get-started/"
     else
       # NOTE: $basearch stays LITERAL — zypper expands it itself, so it MUST be
@@ -556,8 +638,16 @@ provision() {
       _priv zypper --non-interactive addrepo --refresh --gpgcheck \
         'https://downloads.1password.com/linux/rpm/stable/$basearch' 1password || true
       if zypper_retry --non-interactive refresh 1password; then
-        _priv zypper --non-interactive install --no-recommends 1password-cli ||
-          _note_fail "op — install failed; see https://developer.1password.com/docs/cli/get-started/"
+        if ((IS_TRANSACTIONAL)); then
+          if _priv transactional-update -n --no-selfupdate --continue pkg in --no-recommends 1password-cli; then
+            TU_STAGED=$((TU_STAGED + 1))
+          else
+            _note_fail "op — transaction failed; see https://developer.1password.com/docs/cli/get-started/"
+          fi
+        else
+          _priv zypper --non-interactive install --no-recommends 1password-cli ||
+            _note_fail "op — install failed; see https://developer.1password.com/docs/cli/get-started/"
+        fi
       else
         _note_fail "op — 1password repo refresh failed; see https://developer.1password.com/docs/cli/get-started/"
       fi
@@ -612,7 +702,11 @@ provision() {
 # shellcheck disable=SC2329
 bootstrap_check() {
   [[ "${BLIB_DRY:-0}" != 0 ]] || return 0
-  blib_say "(dry run) would provision zypper packages from install/packages.txt, then the upstream/cargo/go tool set"
+  if ((IS_TRANSACTIONAL)); then
+    blib_say "(dry run) transactional edition: would transactional-update pkg in the packages from install/packages.txt into a NEW snapshot (live after a reboot), then the upstream/cargo/go tool set"
+  else
+    blib_say "(dry run) would provision zypper packages from install/packages.txt, then the upstream/cargo/go tool set"
+  fi
 }
 
 # shellcheck disable=SC2329
@@ -637,12 +731,24 @@ bootstrap_wire_pre_loader() {
     blib_say "Leap detected — using the Leap capability declaration (zypper up, unattended upgrades permitted)"
     blib_link "$DOTFILES/os/opensuse.leap.capabilities" "$CONFIG/zsh/os.capabilities"
   fi
+  # The transactional edition is a Tumbleweed base (its ID_LIKE says so), so the branch
+  # above keeps the `dup` declaration — and this one replaces it with the snapshot verbs.
+  if ((IS_TRANSACTIONAL)); then
+    blib_say "transactional edition detected — using the transactional-update capability declaration (staged install/upgrade, reboot applies)"
+    blib_link "$DOTFILES/os/opensuse.microos.capabilities" "$CONFIG/zsh/os.capabilities"
+  fi
 }
 
 # What only this repo knows at the end: the two hints under a non-empty tally. The driver
 # prints the tally, the "finished WITH the misses above" line, and applies the exit code.
 # shellcheck disable=SC2329
 bootstrap_closing() {
+  if ((TU_STAGED)); then
+    # PKG_APPLY's value, printed and never run — the operator reboots. No leading space
+    # when the escalator is empty (root): "${BLIB_SU-sudo} x" would print "( x)".
+    local _su="${BLIB_SU-sudo}"
+    blib_warn "$TU_STAGED package(s) transacted into the next snapshot — reboot to apply (${_su:+$_su }systemctl reboot), then re-run ./bootstrap.sh once so the cargo/go tools build against the new snapshot's toolchain"
+  fi
   if (($1)); then
     blib_warn "the rest of the box is wired and usable"
     if ((BOOTSTRAP_STRICT_DEFAULT)); then

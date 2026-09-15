@@ -1,0 +1,77 @@
+# os/opensuse.microos.capabilities — the TRANSACTIONAL edition's capability declaration
+# (MicroOS, Aeon, Kalpa). dotgibson/dotfiles-core NON-MUTABLE-HOST-PROPOSAL.md §4.3, #191.
+# ──────────────────────────────────────────────────────────────────────────────
+# Read (never sourced) by Core's zsh/02-capabilities.zsh into $_CORE_CAP, and by
+# maint/dotfiles-maint.sh, which is bash. bootstrap.sh's bootstrap_wire_pre_loader relinks
+# $ZDOTDIR/os.capabilities to THIS file when the host is transactional; blib_link_os_layer
+# links the Tumbleweed file by default and the Leap branch relinks its own.
+#
+# THE SOURCE of the "Package-manager commands" table in dotfiles-core's PORTING-MATRIX.md,
+# openSUSE column (its transactional third; opensuse.capabilities is Tumbleweed's and
+# opensuse.leap.capabilities is Leap's): edit here, then run `make gen-porting-matrix` in
+# dotfiles-core.
+# Validate with:  core/scripts/check-capabilities.sh os/opensuse.microos.capabilities
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# THIS FILE IS THE TRANSACTIONAL EDITION'S. TUMBLEWEED'S — THE DEFAULT — IS
+# os/opensuse.capabilities; LEAP'S IS os/opensuse.leap.capabilities.
+# ══════════════════════════════════════════════════════════════════════════════
+# THE HOST, NOT THE ID, PICKS THIS FILE. MicroOS reports ID=opensuse-microos with ID_LIKE
+# carrying opensuse-tumbleweed (measured on MicroOS 20260911), so bootstrap.sh's openSUSE
+# guard and its Tumbleweed probe both pass and would hand a MicroOS box the Tumbleweed
+# declaration. The marker is `transactional-update` on PATH beside a read-only /usr; the
+# relink happens after the Leap branch, in bootstrap_wire_pre_loader.
+#
+# What differs from the Tumbleweed declaration, and why (every value measured on the guest):
+#   · `zypper in` is refused ("Transactional system detected", rc 5); install, remove and
+#     upgrade go through transactional-update into a NEW snapshot, live after PKG_APPLY.
+#   · transactional-update takes its options BEFORE the command, so `up -y` cannot append
+#     -n: no PKG_ASSUME_YES. No PKG_UPGRADE_PARTIAL: a snapshot is all-or-nothing, which is
+#     what "transactional" means.
+#   · no MAINT_UNATTENDED_UPGRADE: MicroOS ships its own transactional-update.timer and a
+#     health-checker rollback; Core's runner must not run a second one beside it. Omitting
+#     the key is the refusal (the same reason the Tumbleweed file omits it, one step further).
+#   · the pending count stays zypper's read-only list-updates (measured: exit 0 on the
+#     running snapshot); transactional-update has no check mode.
+# Everything else is the Tumbleweed file's, key for key — test/check-flavors.sh holds the
+# three declarations to exactly these deltas.
+#
+# A `#` INSIDE A VALUE IS NOT A COMMENT — the reader keeps it. Notes go above.
+
+PROVISIONER=transactional
+
+# ── package-manager verbs (required) ──────────────────────────────────────────
+# The repo cache lives under /var, which is writable on the read-only root.
+PKG_REFRESH=sudo zypper refresh
+# `dup`, as on Tumbleweed (a Tumbleweed base) — through the snapshot verb. Interactive, as
+# the key requires: zypper asks inside the snapshot; the reboot is what applies it.
+PKG_UPGRADE=sudo transactional-update dup
+# -n sits BEFORE the command (measured: snapshot 2 from 1, "Please reboot").
+PKG_INSTALL=sudo transactional-update -n pkg in
+PKG_REMOVE=sudo transactional-update -n pkg rm
+PKG_SEARCH=zypper se
+PKG_OWNS=zypper se --provides
+PKG_COUNT_PENDING=zypper -q list-updates
+# `zypper list-updates` is PIPE-delimited: the `v` status column, then repository, then
+# the package name in field 3 — the same table as the Tumbleweed file.
+PKG_PENDING_MATCH=^v[[:space:]]
+PKG_PENDING_FS=|
+PKG_PENDING_FIELD=3
+
+# ── the staged change becomes live ────────────────────────────────────────────
+# Printed by `up`, the shell-start nudge and the bootstrap's closing line — never run by
+# any of them. The operator reboots.
+PKG_APPLY=sudo systemctl reboot
+# transactional-update leaves /run/reboot-needed when it closes a snapshot; a user can
+# test it (0.0 s, exit 0 = staged). The nudge reads "update staged — reboot to apply".
+PKG_APPLY_PENDING=test -e /run/reboot-needed
+
+# ── scheduler (required) ──────────────────────────────────────────────────────
+SCHEDULER=systemd
+SCHEDULER_UNIT_DIR=~/.config/systemd/user
+
+# ── optional tools ────────────────────────────────────────────────────────────
+# Carried over from the Tumbleweed file unchanged: what is optional on the archive does
+# not change with how the archive is applied. The list repeats Core's nine because a
+# declared TOOLS_OPTIN REPLACES the default rather than adding to it (see that file).
+TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv

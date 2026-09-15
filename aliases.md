@@ -5,6 +5,9 @@ for the universal aliases reference (modern CLI, git, safety nets) that applies 
 
 > **Tumbleweed vs Leap:** Use `zdup` for Tumbleweed (rolling distribution upgrade),
 > use `zup` for Leap (stable package updates). Getting this wrong causes a half-upgrade.
+> **Transactional edition (MicroOS / Aeon / Kalpa):** `zypper` is refused on the read-only
+> root, so `zdup`/`zin`/`zrm` do nothing there — use `sudo transactional-update dup` and
+> `sudo transactional-update -n pkg in|rm …`, then reboot to apply (Core's `up` says so).
 
 ## Package Management (zypper)
 
