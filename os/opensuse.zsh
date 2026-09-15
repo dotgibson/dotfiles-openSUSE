@@ -2,7 +2,8 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # The openSUSE OS-native shell layer. Symlinked to ~/.config/zsh/80-os.zsh and
 # loaded AFTER Core (tools/aliases/functions). openSUSE-specific only.
-# Works on Tumbleweed + Leap, Desktop (Wayland/X11) AND WSL.
+# Works on Tumbleweed + Leap + the transactional edition (MicroOS / Aeon / Kalpa),
+# Desktop (Wayland/X11) AND WSL.
 #
 # NOTE: clipboard logic lives in Core's cross-OS `clip`/`clip-paste` scripts,
 # which zsh, tmux, and nvim all share. This layer just points the pbcopy/pbpaste
@@ -60,6 +61,34 @@ alias zlr='zypper repos'                  # list configured repositories
 # zypper has no `history undo` like dnf — openSUSE rolls back via Btrfs snapshots:
 alias snaps='sudo snapper list'
 # revert a bad change:  sudo snapper undochange <pre>..<post>   (or boot a snapshot)
+
+# ── the transactional edition (MicroOS / Aeon / Kalpa): the same names, the snapshot verbs ─
+# On a read-only root `zypper in|rm|dup` is refused outright ("Transactional system
+# detected", rc 5 — measured, dotfiles-core NON-MUTABLE-HOST-PROPOSAL.md R2), so the four
+# mutating aliases above would do nothing there. The question "is this host transactional"
+# is answered by the capability declaration bootstrap.sh linked — os/opensuse.microos.
+# capabilities declares PROVISIONER=transactional (#191) — read through Core's accessor,
+# the same way core-doctor and `up` read it (core/zsh/30-functions.zsh), never by probing
+# the host again here; the guard is for a shell whose Core did not load. The mutable
+# definitions above stay byte-identical and are simply overridden in this branch.
+#
+# --continue ON EVERY MUTATING CALL: without it transactional-update opens its snapshot
+# from the BOOTED one and silently discards a pending snapshot (measured: 47 packages
+# lost). -n sits BEFORE the command — options precede the verb. `dup` stays interactive,
+# as on Tumbleweed. Nothing here reboots: the snapshot is live after `sudo systemctl
+# reboot`, which Core's `up` and the shell-start nudge say for you.
+if ((${+functions[_core_cap]})) && [[ "$(_core_cap PROVISIONER)" == transactional ]]; then
+  alias zin='sudo transactional-update -n --continue pkg in'     # into the next snapshot
+  alias zrm='sudo transactional-update -n --continue pkg rm'
+  alias zdup='sudo transactional-update --continue dup'          # a Tumbleweed base: dup, staged
+  # Leap's verb has no meaning on a rolling, transactional base — say so instead of
+  # running `zypper up` into a refusal.
+  _dotfiles_zup_transactional() {
+    print -u2 -- "zup: this is the transactional edition (a Tumbleweed base) — Leap's 'zypper up' has no meaning here. Use zdup (sudo transactional-update dup), then reboot to apply."
+    return 1
+  }
+  alias zup='_dotfiles_zup_transactional'
+fi
 
 # ── Flatpak helpers (mostly inert on WSL without WSLg; harmless) ─────────────
 alias fpi='flatpak install flathub'
