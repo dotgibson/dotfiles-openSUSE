@@ -15,4 +15,4 @@
 # the line below; it is here so the VM-only status of the transactional path is declared
 # next to the other gates, and it becomes the answer if that mutable leg is ever dropped.
 
-real-bootstrap none the staging verb (transactional-update into a new snapshot, then a reboot) needs a booted MicroOS host; dotfiles-core's VM harness (research-nonmutable-vm.yml, r4=true) covers it on demand, and the transactional leg of bootstrap.yml exercises the path stubbed on every PR.
+real-bootstrap none the staging verb (transactional-update into a new snapshot, then a reboot) needs a booted MicroOS host; dotfiles-core's VM harness (research-nonmutable-vm.yml, r4=true) covers it on demand, and the transactional leg of bootstrap.yml exercises the path stubbed on every PR. The same is true of the per-snapshot /etc rule behind the staged login shell (#199): only a booted host that actually reboots can show which copy of /etc/shells and /etc/passwd survives, so the stubbed leg proves the call is made and shaped right, never that the write is durable.
