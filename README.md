@@ -158,6 +158,15 @@ reboot makes the snapshot live, and the second run builds the cargo/go tools aga
 finds everything else already in place. Upgrades are `sudo transactional-update dup`, and
 Core's `up` and shell-start nudge say "staged — reboot to apply" instead of counting.
 
+**And `/etc` is per-snapshot there.** A file changed in *both* the pending snapshot and the
+running `/etc` keeps only the **snapshot's** copy once that snapshot boots — the running
+side loses, silently. That lands on the login-shell step, whose two writes (`/etc/shells`
+and `chsh`) would otherwise report success and then be discarded by the very reboot the run
+just asked for. So while a snapshot is pending, `bootstrap.sh` stages the default-shell
+change *inside* it with `transactional-update … --continue run` and tells Core's own step to
+stand down; it takes effect at the reboot, for new logins. A run with no snapshot pending
+writes the running `/etc` as on any other box.
+
 > **Windows / `\\wsl.localhost` checkouts:** run `git config core.fileMode false` in
 > your clone. See [CONTRIBUTING.md](CONTRIBUTING.md) — without it, git reports every
 > executable as modified and a commit can strip `+x` from `bootstrap.sh`.
