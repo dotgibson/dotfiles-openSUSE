@@ -45,6 +45,12 @@ PKG_SEARCH=zypper se
 PKG_OWNS=zypper se --provides
 PKG_COUNT_PENDING=zypper -q list-updates
 
+# ── what --packages must not nag about (#1087) ────────────────────────────────
+# Every verb above runs `zypper`, and openSUSE ships it as part of the base system —
+# install/packages.txt lists what this repo ADDS to a box, so naming the package
+# manager there would be listing the thing doing the installing.
+PKG_UNLISTED_TOOLS=zypper
+
 # ── scheduler (required) ──────────────────────────────────────────────────────
 SCHEDULER=systemd
 SCHEDULER_UNIT_DIR=~/.config/systemd/user
