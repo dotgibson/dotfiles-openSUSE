@@ -93,6 +93,16 @@ DIVERGENT="PKG_UPGRADE MAINT_UNATTENDED_UPGRADE"
 MICROOS_DIVERGENT="PKG_UPGRADE PKG_INSTALL PKG_REMOVE"
 MICROOS_ADDED="PROVISIONER PKG_APPLY PKG_APPLY_PENDING"
 MICROOS_DROPPED="PKG_ASSUME_YES PKG_UPGRADE_PARTIAL"
+# Declared in both, different by design, and NOT a command. PKG_UNLISTED_TOOLS
+# (dotgibson/dotfiles-core#1087) names the binaries a file's OWN verbs run that
+# install/packages.txt does not; it differs here because the verbs differ — Tumbleweed
+# reads and writes with zypper alone, the transactional edition also runs
+# transactional-update (the only thing allowed to write) and systemctl (what PKG_APPLY
+# reboots through). Kept OUT of MICROOS_DIVERGENT because every key in that list carries a
+# hand-written assertion above pinning its exact command shape, and this key is not a
+# command. Core's validator already holds each file's value to that file's own verbs from
+# both ends, so this test only has to stop demanding the two be identical.
+MICROOS_DIVERGENT_NONVERB="PKG_UNLISTED_TOOLS"
 
 fails=()
 note_fail() { fails+=("$1"); }
@@ -334,6 +344,16 @@ for k in $MICROOS_DROPPED; do
     printf '  %-12s %s\n' "$k" "absent (correct)"
   fi
 done
+# Exempting a key from the identical-values sweep must not also exempt it from EXISTING:
+# a file that quietly dropped it would then pass here while the warnings it suppresses came
+# back on that edition alone.
+for k in $MICROOS_DIVERGENT_NONVERB; do
+  t="$(cap_get "$TW_DUMP" "$k")" || t=""
+  m="$(cap_get "$MICROOS_DUMP" "$k")" || m=""
+  [[ -n "$t" ]] || note_fail "$TW declares no $k — it is a declared divergence, not an optional key here"
+  [[ -n "$m" ]] || note_fail "$MICROOS declares no $k — it is a declared divergence, not an optional key here"
+  [[ -z "$t" || -z "$m" ]] || printf '  %-12s %s\n' "$k" "tw '$t' | transactional '$m'"
+done
 
 # ── 8. every OTHER key matches the Tumbleweed file, both directions ──────────
 # The same load-bearing check as section 3, for the third file: individually valid, and
@@ -342,7 +362,7 @@ say "the remaining keys — identical to the Tumbleweed declaration"
 m_diverged=0
 while IFS= read -r k; do
   [[ -n "$k" ]] || continue
-  case " $MICROOS_DIVERGENT $MICROOS_DROPPED " in *" $k "*) continue ;; esac
+  case " $MICROOS_DIVERGENT $MICROOS_DIVERGENT_NONVERB $MICROOS_DROPPED " in *" $k "*) continue ;; esac
   a="$(cap_get "$TW_DUMP" "$k")" || a=""
   if ! b="$(cap_get "$MICROOS_DUMP" "$k")"; then
     note_fail "$k is declared in $TW but not in $MICROOS — every key but $MICROOS_DIVERGENT $MICROOS_DROPPED must exist in both"
@@ -356,7 +376,7 @@ while IFS= read -r k; do
 done < <(cap_keys "$TW_DUMP")
 while IFS= read -r k; do
   [[ -n "$k" ]] || continue
-  case " $MICROOS_DIVERGENT $MICROOS_ADDED " in *" $k "*) continue ;; esac
+  case " $MICROOS_DIVERGENT $MICROOS_DIVERGENT_NONVERB $MICROOS_ADDED " in *" $k "*) continue ;; esac
   cap_get "$TW_DUMP" "$k" >/dev/null || {
     note_fail "$k is declared in $MICROOS but not in $TW — only $MICROOS_ADDED may be added there"
     m_diverged=1
@@ -449,7 +469,8 @@ if ((${#fails[@]})); then
 
 All three declarations document their own delta at length. If a divergence here is
 INTENDED, say so in the files concerned and add the key to DIVERGENT (Leap) or to
-MICROOS_DIVERGENT / MICROOS_ADDED / MICROOS_DROPPED (the transactional edition) in this
+MICROOS_DIVERGENT / MICROOS_DIVERGENT_NONVERB / MICROOS_ADDED / MICROOS_DROPPED (the
+transactional edition) in this
 test; if it is not, the fix is to bring the files back into step by hand.
 EOF
   exit 2
