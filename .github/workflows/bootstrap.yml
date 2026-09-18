@@ -68,6 +68,14 @@ jobs:
       # arm/arm64 on 2026-09-15 (`no matching manifest for linux/amd64`, docker exit 125 in
       # seconds, both jobs). Same remedy — bump to a dated tag whose manifest list carries
       # amd64 (registry.opensuse.org/v2/opensuse/tumbleweed/manifests/<tag> says which).
+      # A date tag's per-arch entries are PUBLISHED INDEPENDENTLY, so a fresh tag can carry no
+      # amd64 at all: on 2026-09-18, 20260917 listed ONLY 386 while `latest` still served
+      # 20260916's amd64 build (#205). That shape does NOT fail the pull — docker accepts
+      # linux/386 as compatible on an amd64 host — so the jobs ran an i586 container
+      # (bash-5.3.15-8.2.i586, repos under ports/i586/) and the resolve gate reported
+      # starship, tealdeer and ouch UNRESOLVED: exactly the Rust names the i586 port does not
+      # build, with the other 44 resolving. That fingerprint is an arch mismatch, not a rename,
+      # and the arch guard at the front of `prep:` below now names it in seconds. Same remedy.
       #
       # TAG, NOT DIGEST: a date tag is rebuilt within its snapshot (20260830 had three builds)
       # but every rebuild carries the same VERSION_ID, which is the unit the probe cares about;
@@ -75,14 +83,21 @@ jobs:
       # governs Core's own workflows, not caller inputs (dotfiles-Alpine passes `alpine:3.24`).
       # The reusable's `docker run "$IMAGE"` and Core's fleet-bootstrap-matrix.py (the weekly
       # real-bootstrap sweep) take this registry-qualified ref verbatim.
-      image: registry.opensuse.org/opensuse/tumbleweed:20260915
+      image: registry.opensuse.org/opensuse/tumbleweed:20260916
       # openSUSE Tumbleweed's OSS mirror (cdn.opensuse.org) intermittently times out
       # in CI (curl error 28), and a single `zypper install` has no retry, so one slow
       # fetch fails the whole links-only job (zsh "no provider" -> exit 104). Retry the
       # refresh+install up to 5x with backoff; the `if` keeps a failed attempt from
       # tripping `set -e` (prep runs under `sh -euc`), and the final `command -v zsh`
       # still fails LOUD if zsh genuinely can't be installed (no false green).
-      prep: 'for i in 1 2 3 4 5; do if zypper --non-interactive --gpg-auto-import-keys refresh && zypper --non-interactive --gpg-auto-import-keys install bash zsh; then break; fi; echo "zypper prep attempt $i failed (mirror timeout?), retrying in $((i*10))s..." >&2; sleep $((i*10)); done; command -v zsh >/dev/null || { echo "zsh still not installed after 5 attempts" >&2; exit 1; }'
+      # The prep OPENS with an arch guard (#205, see the 386-only note above). `uname -m` is
+      # useless for this — the kernel says x86_64 inside a 386 container — so it asks rpm for
+      # the arch of the installed bash. It `exit`s rather than returning non-zero on purpose:
+      # Core's reusable runs prep as `until eval "$PREP"` with five retries, and an exit
+      # inside eval ends the whole container script at once instead of spending ~100 s of
+      # backoff on a container that can never be right. Apostrophe-free, like the rest of
+      # this string: it is eval'd inside the reusable's single-quoted `sh -euc` script.
+      prep: 'a=$(rpm -q --qf %{ARCH} bash); [ "$a" = x86_64 ] || { echo "container is $a, not x86_64: this date tag has no amd64 manifest entry and docker pulled the 386 image as compatible; bump to a tag whose manifest list carries amd64 (registry.opensuse.org/v2/opensuse/tumbleweed/manifests/<tag>)" >&2; exit 1; }; for i in 1 2 3 4 5; do if zypper --non-interactive --gpg-auto-import-keys refresh && zypper --non-interactive --gpg-auto-import-keys install bash zsh; then break; fi; echo "zypper prep attempt $i failed (mirror timeout?), retrying in $((i*10))s..." >&2; sleep $((i*10)); done; command -v zsh >/dev/null || { echo "zsh still not installed after 5 attempts" >&2; exit 1; }'
       # Resolve every name in the package list against the real repos, downloading
       # nothing. This is the blind spot provision_stub cannot cover: it stubs the
       # package managers, so a WRONG PACKAGE NAME is invisible to it.
@@ -152,7 +167,8 @@ jobs:
   transactional:
     uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v7
     with:
-      image: registry.opensuse.org/opensuse/tumbleweed:20260915
-      prep: 'for i in 1 2 3 4 5; do if zypper --non-interactive --gpg-auto-import-keys refresh && zypper --non-interactive --gpg-auto-import-keys install bash zsh; then break; fi; echo "zypper prep attempt $i failed (mirror timeout?), retrying in $((i*10))s..." >&2; sleep $((i*10)); done; command -v zsh >/dev/null || { echo "zsh still not installed after 5 attempts" >&2; exit 1; }; export BOOTSTRAP_TOLERATE_FAILURES=1'
+      image: registry.opensuse.org/opensuse/tumbleweed:20260916
+      # Same prep as the leg above, arch guard included (explained there), plus the export.
+      prep: 'a=$(rpm -q --qf %{ARCH} bash); [ "$a" = x86_64 ] || { echo "container is $a, not x86_64: this date tag has no amd64 manifest entry and docker pulled the 386 image as compatible; bump to a tag whose manifest list carries amd64 (registry.opensuse.org/v2/opensuse/tumbleweed/manifests/<tag>)" >&2; exit 1; }; for i in 1 2 3 4 5; do if zypper --non-interactive --gpg-auto-import-keys refresh && zypper --non-interactive --gpg-auto-import-keys install bash zsh; then break; fi; echo "zypper prep attempt $i failed (mirror timeout?), retrying in $((i*10))s..." >&2; sleep $((i*10)); done; command -v zsh >/dev/null || { echo "zsh still not installed after 5 attempts" >&2; exit 1; }; export BOOTSTRAP_TOLERATE_FAILURES=1'
       provision_stub: true
       provisioner: transactional
