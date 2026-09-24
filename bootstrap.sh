@@ -80,6 +80,9 @@ MicroOS / Aeon / Kalpa; Workstation or WSL) and wire up dotfiles. Idempotent: sa
 On the transactional edition packages go into a NEW snapshot and are live after a reboot:
 the run ends with "reboot to apply, then re-run once" — the second run builds the cargo/go
 tools against the new snapshot's toolchain.
+/etc is per-snapshot there too: while a snapshot is pending, a write to the RUNNING /etc is
+discarded by the reboot, so the login-shell change (/etc/shells + chsh) is staged INSIDE the
+snapshot and takes effect when it boots.
 
   --no-flatpak          skip the Flathub remote (auto-skipped on WSL)
   --tolerate-failures   exit 0 even if optional tools failed (for CI)
@@ -196,6 +199,12 @@ if command -v transactional-update >/dev/null 2>&1 && [[ ! -w /usr ]]; then IS_T
 # forces it, with transactional-update shimmed.
 [[ "${BOOTSTRAP_PROVISIONER:-}" == transactional ]] && IS_TRANSACTIONAL=1
 TU_STAGED=0 # packages transacted into the next snapshot this run — the closing hint keys on it
+# The LOGIN-SHELL change went into that same snapshot (bootstrap_wire_post_loader, #199).
+# A SECOND counter rather than another ++ on TU_STAGED: that one counts PACKAGES and its
+# closing line says so, and the two conditions do not coincide — a --links-only run
+# transacts no packages yet can still find a snapshot already pending, and a re-run after
+# the reboot transacts packages while the login shell is already zsh.
+TU_LOGIN_SHELL_STAGED=0
 # CI's other seam, and why it exists next to this one: the reusable's provision-stub job runs
 # `./bootstrap.sh` with no arguments and fails on any non-zero exit, and under its shims the
 # carapace block cannot resolve a release URL (the curl stub answers nothing), which this
@@ -739,6 +748,225 @@ bootstrap_wire_pre_loader() {
   fi
 }
 
+# ── /etc is PER-SNAPSHOT: a write here is not what the next boot reads ────────
+# _tu_etc_is_volatile — true when a write to the RUNNING /etc will be discarded at the
+# reboot, i.e. when a snapshot is pending. THE MEASUREMENT (#199, dotfiles-core run
+# 35130669056): /etc on the transactional edition is an overlay per snapshot, and a file
+# changed in BOTH the pending snapshot and the running /etc keeps only the SNAPSHOT's copy
+# once that snapshot boots. The two do not merge — the running side LOSES, silently.
+#
+# TWO WAYS to be in that state, and the second is the one that is easy to miss:
+#   · THIS run staged something — TU_STAGED, the same counter the closing hint reads.
+#   · A snapshot was ALREADY pending before this run started. Not a corner case for the
+#     login shell specifically: installing zsh is what puts /usr/bin/zsh into the
+#     SNAPSHOT's /etc/shells, so on the second ./bootstrap.sh — the one the closing line
+#     asks for — an operator who has not yet rebooted already has a pending /etc/shells
+#     that disagrees with the running one. The probe is PKG_APPLY_PENDING's, verbatim from
+#     os/opensuse.microos.capabilities (`test -e /run/reboot-needed`), hardcoded here for
+#     the same reason bootstrap_closing hardcodes PKG_APPLY's `systemctl reboot`:
+#     bootstrap.sh is bash, running before any Core zsh exists, so there is no _core_cap to
+#     ask. test/check-flavors.sh holds the two spellings together.
+_tu_etc_is_volatile() {
+  ((IS_TRANSACTIONAL)) || return 1
+  if ((TU_STAGED)); then return 0; fi
+  if [[ -e /run/reboot-needed ]]; then return 0; fi
+  # A DRY RUN has staged nothing — but it describes a run that WOULD: bootstrap_check
+  # already prints "would ... pkg in ... into a NEW snapshot". Answering "durable" here
+  # would make --dry-run advertise the very host write this exists to stop. --links-only is
+  # the honest exception: it skips bootstrap_provision entirely, so a links-only run stages
+  # nothing and the running /etc really is what the next boot reads.
+  if ((BLIB_DRY)) && ((BLIB_LINKS_ONLY == 0)); then return 0; fi
+  return 1
+}
+
+# The script below is executed by `transactional-update ... run` INSIDE the pending
+# snapshot. Read it as a separate artefact from the bash around it: it is POSIX sh
+# (whatever that snapshot's /bin/sh is), it sees the SNAPSHOT's /usr, /etc and PATH, and
+# nothing this script knows is in scope there. `sh -c "$SCRIPT" sh "$user"` makes $0 `sh`
+# (so a diagnostic names something sane) and $1 the user — the only value that has to cross.
+#
+# IT EXITS 0 ON EVERY PATH, deliberately. transactional-update discards the snapshot it
+# opened when its command fails — measured for `dup`, which "deletes its own snapshot on the
+# way out" (#199) — and this call rides --continue on top of the snapshot that carries the
+# package list. A chsh that fails must cost the login shell and NOTHING else. The outcome
+# travels back as a marker line on stdout instead of as an exit code.
+#
+# NO SINGLE QUOTE may appear inside it — hence the read loop over /etc/passwd where Core's
+# host-side twin uses awk. The single quotes are also what guarantee this outer shell
+# expands nothing: a $ evaluated out here would be answered against the RUNNING system,
+# which is the entire class of mistake being fixed.
+# shellcheck disable=SC2016
+_TU_LOGIN_SHELL_SCRIPT='
+set -u
+u="$1"
+z="$(command -v zsh 2>/dev/null || true)"
+if [ -z "$z" ] && [ -x /usr/bin/zsh ]; then z=/usr/bin/zsh; fi
+if [ -z "$z" ] || [ ! -x "$z" ]; then echo "DOTFILES_LOGIN_SHELL=no-zsh"; exit 0; fi
+cur=""
+if command -v getent >/dev/null 2>&1; then cur="$(getent passwd "$u" 2>/dev/null | cut -d: -f7 || true)"; fi
+if [ -z "$cur" ]; then
+  while IFS=: read -r pw_name pw_pw pw_uid pw_gid pw_gecos pw_home pw_shell; do
+    if [ "$pw_name" = "$u" ]; then cur="$pw_shell"; break; fi
+  done < /etc/passwd
+fi
+if [ "$cur" = "$z" ]; then echo "DOTFILES_LOGIN_SHELL=already"; exit 0; fi
+if ! grep -qxF "$z" /etc/shells 2>/dev/null; then
+  printf "%s\n" "$z" >> /etc/shells 2>/dev/null || echo "DOTFILES_LOGIN_SHELL_NOTE=shells"
+fi
+if command -v chsh >/dev/null 2>&1 && chsh -s "$z" "$u" >/dev/null 2>&1; then echo "DOTFILES_LOGIN_SHELL=set:$z"; exit 0; fi
+if command -v usermod >/dev/null 2>&1 && usermod -s "$z" "$u" >/dev/null 2>&1; then echo "DOTFILES_LOGIN_SHELL=set:$z"; exit 0; fi
+echo "DOTFILES_LOGIN_SHELL=failed:$z"
+exit 0
+'
+
+# ── the login shell, on a box whose /etc is not durable ───────────────────────
+# THE STEP CORE OWNS, TAKEN OVER — only here, only on the transactional edition, only
+# while a snapshot is pending.
+#
+# WHAT GOES WRONG WITHOUT THIS (#199). core/lib/bootstrap-lib.sh :: blib_set_login_shell
+# makes exactly two /etc writes on the RUNNING system — append zsh to /etc/shells, then
+# `chsh -s`. bootstrap_provision has, minutes earlier, staged install/packages.txt into a
+# NEW snapshot, zsh among them, so both writes land in a copy of /etc the next boot
+# discards (see _tu_etc_is_volatile). Both SUCCEED. Core prints "default shell -> zsh", the
+# run exits 0, the operator reboots — and their login shell is still bash. Nothing in the
+# output ever said otherwise; that is the whole bug.
+#
+# WHY THIS HOOK AND NOT bootstrap_provision, in order of weight:
+#   1. --links-only skips bootstrap_provision entirely, and a links-only run is exactly
+#      when the SECOND half of the gate fires (a snapshot pending from an earlier run, not
+#      yet rebooted). Staging from provision would leave that run writing the running /etc.
+#   2. blib_main calls this hook IMMEDIATELY BEFORE the BOOTSTRAP_LOGIN_SHELL test
+#      (core/lib/bootstrap-lib.sh:1852-1853), so "we took the step over" and "Core stands
+#      down" are adjacent lines. From provision they are ~500 lines and one phase apart.
+#   3. Core runs the login shell LAST on purpose — "a box where /etc/shells is read-only or
+#      chsh is restricted would throw away a COMPLETE and correct wiring over the one
+#      cosmetic step left". Standing in for it IN ITS OWN SLOT keeps that guarantee;
+#      staging from provision would move the riskiest step to before the first symlink.
+# Core's hook contract calls this slot "links that must come AFTER the loader"; this is not
+# a link. The widening is deliberate: the slot's real meaning is "the last thing before the
+# driver's login-shell step", which is exactly what is needed.
+#
+# The escalator is NOT affected: blib_main resolves it at lines ~1819-1825, BEFORE this
+# hook, so setting BOOTSTRAP_LOGIN_SHELL=0 here cannot retroactively skip that resolution.
+# Setting it at file scope WOULD be visible there — another reason it is set only in here.
+#
+# blib_login_shell_hint, Core's documented companion to BOOTSTRAP_LOGIN_SHELL=0, is
+# deliberately NOT used: it reads the RUNNING /etc/passwd, the copy the reboot discards, so
+# on a correctly staged box it would nudge the operator to chsh on the host — i.e. it would
+# recommend the bug.
+# shellcheck disable=SC2329
+bootstrap_wire_post_loader() {
+  # The non-transactional path is UNCHANGED, to the byte: return without touching
+  # BOOTSTRAP_LOGIN_SHELL, and Core's step runs exactly as it always has.
+  ((IS_TRANSACTIONAL)) || return 0
+  # Mirror Core's own first line (`blib_want zsh || return 0`) rather than reimplement the
+  # selector: --skip=zsh must suppress the STAGED change for the same reason it suppresses
+  # the direct one. Returning WITHOUT setting BOOTSTRAP_LOGIN_SHELL=0 is deliberate — Core's
+  # identical guard then short-circuits on its own, so there is ONE definition of "does this
+  # run want zsh", not two that can drift.
+  blib_want zsh || return 0
+  # Nothing staged and nothing pending: the running /etc IS what the next boot reads, so
+  # Core's version is correct and must keep running. This is the post-reboot re-run.
+  _tu_etc_is_volatile || return 0
+
+  local _ls_user _su _out _marker _rc=0
+  # `|| true`: blib_login_shell_hint guards `id` the same way — under `set -e` a box where
+  # id is missing would abort the bootstrap on its last wiring step.
+  _ls_user="$(id -un 2>/dev/null || true)"
+  _su="${BLIB_SU-sudo}"
+
+  # SAY IT OUT LOUD. This is the part no reader can infer from the code, and the part the
+  # silent failure consisted of: on this edition a SUCCESSFUL /etc write is not a DURABLE
+  # one. Two lines on purpose — the headline on stdout with the rest of the narration, the
+  # mechanism on stderr, where something the operator must not miss belongs.
+  blib_say "login shell: a snapshot is pending, so the RUNNING /etc is not what the next boot will read"
+  blib_warn "/etc is per-snapshot on the transactional edition: a file changed in BOTH the pending snapshot and the running /etc keeps only the SNAPSHOT's copy after the reboot (measured, #199). Core's step would append to /etc/shells and chsh on the RUNNING system, report success, and be thrown away — so this repo stages the change INSIDE the snapshot instead."
+
+  # From here WE own the step on EVERY branch, including the ones that fail: Core must not
+  # follow us with the host write just explained away. Set once, not per-branch. Read by
+  # blib_main one line after this hook returns (bootstrap-lib.sh:1853).
+  # shellcheck disable=SC2034
+  BOOTSTRAP_LOGIN_SHELL=0
+
+  if [[ -z "$_ls_user" ]]; then
+    _note_fail "login shell — could not determine the current user (id unavailable); after the reboot run: ${_su:+$_su }chsh -s \$(command -v zsh) \$(whoami)"
+    return 0
+  fi
+
+  if ((BLIB_DRY)); then
+    # A plan, not a write. Core's own dry-run line ("would set login shell to ...") is
+    # suppressed along with the rest of its step, and that is the point: on this box it
+    # would describe a host chsh that the real run does not do.
+    blib_say "(dry run) would stage the default-shell change inside the pending snapshot, resolving zsh THERE, via transactional-update --continue run (for $_ls_user)"
+    blib_say "(dry run) and would NOT touch the running /etc/shells or /etc/passwd"
+    return 0
+  fi
+
+  # No escalator. A --links-only run resolves one WITHOUT --require (bootstrap-lib.sh:1822),
+  # so BLIB_SU can legitimately be empty on a non-root box — blib_main has already warned
+  # once. transactional-update is root-only; running it unprivileged fails with a lock error
+  # that says nothing about the login shell.
+  if [[ "$EUID" != 0 && -z "$_su" ]]; then
+    _note_fail "login shell — no privilege escalator, so the change could not be staged; after the reboot run: sudo chsh -s \$(command -v zsh) $_ls_user"
+    return 0
+  fi
+
+  blib_say "staging the default-shell change inside the pending snapshot"
+  # THE ONE INVOCATION, and the shape the 1Password key import above already uses.
+  # --continue is not optional and never has been: without it this call opens its snapshot
+  # from the BOOTED one and the pending snapshot — 47 packages, measured — is discarded.
+  # Options go BEFORE the subcommand, as everywhere else in this file.
+  # `run`, not `pkg in`: zsh is resolved INSIDE the snapshot. On a first run the host has no
+  # zsh at all (it is in the list that was just transacted), so `command -v zsh` out here
+  # answers nothing and any path computed out here would be the wrong one.
+  # 2>&1 because transactional-update narrates on stderr and the marker is on stdout; both
+  # are echoed back in the no-marker branch, so nothing is swallowed.
+  _out="$(_priv transactional-update -n --no-selfupdate --continue run sh -c "$_TU_LOGIN_SHELL_SCRIPT" sh "$_ls_user" 2>&1)" || _rc=$?
+  _marker="$(printf '%s\n' "$_out" | sed -n 's/^DOTFILES_LOGIN_SHELL=//p' | tail -1)"
+  case "$_marker" in
+  set:*)
+    TU_LOGIN_SHELL_STAGED=1
+    blib_ok "default shell -> zsh (${_marker#set:}) staged in the snapshot — applies at the REBOOT, to NEW logins"
+    ;;
+  already)
+    # The snapshot is the only copy that can answer this. The running /etc/passwd cannot:
+    # it is a different copy, and the whole reason we are here is that the two disagree and
+    # the snapshot wins — including in the direction where the HOST already says zsh.
+    blib_ok "the pending snapshot's login shell is already zsh — nothing to stage"
+    ;;
+  no-zsh)
+    _note_fail "login shell — zsh is not in the pending snapshot either, so nothing could be staged (did the package transaction above miss it?); after the reboot: ${_su:+$_su }chsh -s \$(command -v zsh) $_ls_user"
+    ;;
+  failed:*)
+    _note_fail "login shell — chsh and usermod both failed inside the snapshot (no 'shadow' package? an LDAP/SSSD account?); after the reboot: ${_su:+$_su }chsh -s ${_marker#failed:} $_ls_user"
+    ;;
+  *)
+    if ((_rc)); then
+      # No marker AND a non-zero rc: the TRANSACTION is what failed, not the step inside it.
+      # Echo its output — the reason is in there and nowhere else, and the ledger line below
+      # only has room for the retry.
+      printf '%s\n' "$_out" >&2
+      _note_fail "login shell — the snapshot transaction failed (rc=$_rc); retry later: ${_su:+$_su }transactional-update -n --no-selfupdate --continue run chsh -s /usr/bin/zsh $_ls_user"
+    else
+      # rc 0 with nothing to show for it: the transaction succeeded, so NOTHING is known to
+      # have failed and this is not a ledger entry (which would cost this repo's exit-2
+      # contract over an unanswered question). It is also what CI's stubbed
+      # transactional-update looks like, since the shim does not execute `run`.
+      blib_warn "login shell — the snapshot transaction reported success but the staged step did not report back; confirm after the reboot with: getent passwd $_ls_user"
+    fi
+    ;;
+  esac
+  # Advisory only, and it never overrides the verdict above: chsh may well have succeeded
+  # anyway (the zsh package ships the /etc/shells line itself). But an operator who later
+  # sees chsh refuse the shell needs to have been told.
+  case "$_out" in
+  *DOTFILES_LOGIN_SHELL_NOTE=shells*)
+    blib_warn "could not add zsh to the snapshot's /etc/shells — if a later chsh refuses the shell, add that line by hand after the reboot"
+    ;;
+  esac
+  return 0
+}
+
 # What only this repo knows at the end: the two hints under a non-empty tally. The driver
 # prints the tally, the "finished WITH the misses above" line, and applies the exit code.
 # shellcheck disable=SC2329
@@ -748,6 +976,20 @@ bootstrap_closing() {
     # when the escalator is empty (root): "${BLIB_SU-sudo} x" would print "( x)".
     local _su="${BLIB_SU-sudo}"
     blib_warn "$TU_STAGED package(s) transacted into the next snapshot — reboot to apply (${_su:+$_su }systemctl reboot), then re-run ./bootstrap.sh once so the cargo/go tools build against the new snapshot's toolchain"
+  fi
+  # ── the login shell went into that same snapshot (#199) ─────────────────────
+  # Reported SEPARATELY from the package tally because the two conditions do not coincide
+  # (see TU_LOGIN_SHELL_STAGED at the top of this file), and because the reboot sentence
+  # must appear exactly ONCE: when packages were also staged the line above already carries
+  # it, so this one only points at it. When they were not — a --links-only run that found a
+  # snapshot already pending — nothing else would have mentioned a reboot at all.
+  if ((TU_LOGIN_SHELL_STAGED)); then
+    local _su_ls="${BLIB_SU-sudo}"
+    if ((TU_STAGED)); then
+      blib_warn "the default login shell (zsh) is in that same snapshot — it applies at that reboot, to NEW logins; a write to the RUNNING /etc would not have survived it. Until then: exec zsh"
+    else
+      blib_warn "the default login shell (zsh) was staged into the pending snapshot — reboot to apply (${_su_ls:+$_su_ls }systemctl reboot); it applies to NEW logins from then. Until then: exec zsh"
+    fi
   fi
   if (($1)); then
     blib_warn "the rest of the box is wired and usable"

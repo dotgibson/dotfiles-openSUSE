@@ -93,6 +93,16 @@ DIVERGENT="PKG_UPGRADE MAINT_UNATTENDED_UPGRADE"
 MICROOS_DIVERGENT="PKG_UPGRADE PKG_INSTALL PKG_REMOVE"
 MICROOS_ADDED="PROVISIONER PKG_APPLY PKG_APPLY_PENDING"
 MICROOS_DROPPED="PKG_ASSUME_YES PKG_UPGRADE_PARTIAL"
+# Declared in both, different by design, and NOT a command. PKG_UNLISTED_TOOLS
+# (dotgibson/dotfiles-core#1087) names the binaries a file's OWN verbs run that
+# install/packages.txt does not; it differs here because the verbs differ — Tumbleweed
+# reads and writes with zypper alone, the transactional edition also runs
+# transactional-update (the only thing allowed to write) and systemctl (what PKG_APPLY
+# reboots through). Kept OUT of MICROOS_DIVERGENT because every key in that list carries a
+# hand-written assertion above pinning its exact command shape, and this key is not a
+# command. Core's validator already holds each file's value to that file's own verbs from
+# both ends, so this test only has to stop demanding the two be identical.
+MICROOS_DIVERGENT_NONVERB="PKG_UNLISTED_TOOLS"
 
 fails=()
 note_fail() { fails+=("$1"); }
@@ -334,6 +344,16 @@ for k in $MICROOS_DROPPED; do
     printf '  %-12s %s\n' "$k" "absent (correct)"
   fi
 done
+# Exempting a key from the identical-values sweep must not also exempt it from EXISTING:
+# a file that quietly dropped it would then pass here while the warnings it suppresses came
+# back on that edition alone.
+for k in $MICROOS_DIVERGENT_NONVERB; do
+  t="$(cap_get "$TW_DUMP" "$k")" || t=""
+  m="$(cap_get "$MICROOS_DUMP" "$k")" || m=""
+  [[ -n "$t" ]] || note_fail "$TW declares no $k — it is a declared divergence, not an optional key here"
+  [[ -n "$m" ]] || note_fail "$MICROOS declares no $k — it is a declared divergence, not an optional key here"
+  [[ -z "$t" || -z "$m" ]] || printf '  %-12s %s\n' "$k" "tw '$t' | transactional '$m'"
+done
 
 # ── 8. every OTHER key matches the Tumbleweed file, both directions ──────────
 # The same load-bearing check as section 3, for the third file: individually valid, and
@@ -342,7 +362,7 @@ say "the remaining keys — identical to the Tumbleweed declaration"
 m_diverged=0
 while IFS= read -r k; do
   [[ -n "$k" ]] || continue
-  case " $MICROOS_DIVERGENT $MICROOS_DROPPED " in *" $k "*) continue ;; esac
+  case " $MICROOS_DIVERGENT $MICROOS_DIVERGENT_NONVERB $MICROOS_DROPPED " in *" $k "*) continue ;; esac
   a="$(cap_get "$TW_DUMP" "$k")" || a=""
   if ! b="$(cap_get "$MICROOS_DUMP" "$k")"; then
     note_fail "$k is declared in $TW but not in $MICROOS — every key but $MICROOS_DIVERGENT $MICROOS_DROPPED must exist in both"
@@ -356,7 +376,7 @@ while IFS= read -r k; do
 done < <(cap_keys "$TW_DUMP")
 while IFS= read -r k; do
   [[ -n "$k" ]] || continue
-  case " $MICROOS_DIVERGENT $MICROOS_ADDED " in *" $k "*) continue ;; esac
+  case " $MICROOS_DIVERGENT $MICROOS_DIVERGENT_NONVERB $MICROOS_ADDED " in *" $k "*) continue ;; esac
   cap_get "$TW_DUMP" "$k" >/dev/null || {
     note_fail "$k is declared in $MICROOS but not in $TW — only $MICROOS_ADDED may be added there"
     m_diverged=1
@@ -399,6 +419,48 @@ else
   note_fail "bootstrap.sh never invokes 'transactional-update -n …' — the staging path is gone"
 fi
 
+# ── 10. the login shell is STAGED, not written to the running /etc (#199) ─────
+# /etc is per-snapshot here, and a file changed in BOTH the pending snapshot and the
+# running /etc keeps only the SNAPSHOT's copy after the reboot (measured, dotfiles-core run
+# 35130669056). Core's blib_set_login_shell writes the RUNNING /etc — /etc/shells, then
+# chsh — so on this edition it reports success and is discarded: the run says "default
+# shell -> zsh" and the operator reboots into bash. bootstrap.sh takes the step over in
+# bootstrap_wire_post_loader and tells the driver to skip Core's version. None of this is
+# visible to check-capabilities.sh, which validates a declaration against a schema, and
+# none of it is reachable from a container — .github/core-gates.txt says so.
+say "the login shell is staged inside the snapshot, not written to the running /etc"
+if grep -q '^bootstrap_wire_post_loader()' bootstrap.sh; then
+  printf '  %s\n' "bootstrap_wire_post_loader present (blib_main calls it immediately before its login-shell step)"
+else
+  note_fail "bootstrap.sh defines no bootstrap_wire_post_loader — that hook is the only slot before Core's blib_set_login_shell, so the login shell goes back to writing an /etc the reboot discards (#199)"
+fi
+if grep -qE '^[[:space:]]*BOOTSTRAP_LOGIN_SHELL=0' bootstrap.sh; then
+  printf '  %s\n' "sets BOOTSTRAP_LOGIN_SHELL=0 (Core's own step stands down)"
+else
+  note_fail "bootstrap.sh never sets BOOTSTRAP_LOGIN_SHELL=0 — Core's blib_set_login_shell then runs AFTER the staged change and appends /etc/shells + chsh on the RUNNING system, which is the write the reboot throws away"
+fi
+if grep -qE 'transactional-update -n .*--continue run sh -c' bootstrap.sh; then
+  printf '  %s\n' "staged through 'run sh -c' inside the snapshot (zsh is resolved THERE)"
+else
+  note_fail "bootstrap.sh no longer stages the login-shell change with 'transactional-update … --continue run sh -c …' — resolving zsh and running chsh on the HOST cannot work on a first run (zsh exists only in the snapshot) and does not survive the reboot on any run"
+fi
+if grep -q 'blib_want zsh' bootstrap.sh; then
+  printf '  %s\n' "mirrors Core's 'blib_want zsh' guard, so --skip=zsh suppresses the staged change too"
+else
+  note_fail "bootstrap.sh no longer asks blib_want zsh before staging — --skip=zsh / --only=nvim would still stage a chsh, which Core's blib_set_login_shell would not have done"
+fi
+# The gate's SECOND half: a snapshot pending from an EARLIER run. The probe is
+# PKG_APPLY_PENDING's, and bootstrap.sh hardcodes it (it is bash, with no _core_cap to
+# ask), so the two spellings must be held together or the gate silently stops firing.
+m_pending="$(cap_get "$MICROOS_DUMP" PKG_APPLY_PENDING)" || m_pending=""
+if [[ "$m_pending" != */run/reboot-needed* ]]; then
+  note_fail "$MICROOS: PKG_APPLY_PENDING is '${m_pending:-absent}' — bootstrap.sh's login-shell gate hardcodes this key's /run/reboot-needed probe; changing one without the other leaves a doomed /etc write ungated"
+elif grep -q '/run/reboot-needed' bootstrap.sh; then
+  printf '  %s\n' "the gate reads PKG_APPLY_PENDING's probe (/run/reboot-needed) for a snapshot pending from an earlier run"
+else
+  note_fail "bootstrap.sh no longer probes /run/reboot-needed — a run that stages nothing itself (--links-only, or a re-run before the reboot) then writes a running /etc that the pending snapshot overwrites; installing zsh is exactly what puts /usr/bin/zsh in the SNAPSHOT's /etc/shells"
+fi
+
 echo
 if ((${#fails[@]})); then
   bad "${#fails[@]} flavor-split finding(s):"
@@ -407,7 +469,8 @@ if ((${#fails[@]})); then
 
 All three declarations document their own delta at length. If a divergence here is
 INTENDED, say so in the files concerned and add the key to DIVERGENT (Leap) or to
-MICROOS_DIVERGENT / MICROOS_ADDED / MICROOS_DROPPED (the transactional edition) in this
+MICROOS_DIVERGENT / MICROOS_DIVERGENT_NONVERB / MICROOS_ADDED / MICROOS_DROPPED (the
+transactional edition) in this
 test; if it is not, the fix is to bring the files back into step by hand.
 EOF
   exit 2

@@ -46,6 +46,11 @@ PKG_SEARCH=zypper se
 PKG_OWNS=zypper se --provides
 PKG_COUNT_PENDING=zypper -q list-updates
 
+# ── what --packages must not nag about (#1087) ────────────────────────────────
+# Same as Tumbleweed's: `zypper` is base-system on Leap too, so packages.txt does not
+# name it and the cross-check would warn on every verb.
+PKG_UNLISTED_TOOLS=zypper
+
 # ── scheduler (required) ──────────────────────────────────────────────────────
 SCHEDULER=systemd
 SCHEDULER_UNIT_DIR=~/.config/systemd/user

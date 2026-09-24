@@ -66,6 +66,12 @@ PKG_APPLY=sudo systemctl reboot
 # test it (0.0 s, exit 0 = staged). The nudge reads "update staged — reboot to apply".
 PKG_APPLY_PENDING=test -e /run/reboot-needed
 
+# ── what --packages must not nag about (#1087) ────────────────────────────────
+# All three are base-system on a transactional image and none is in packages.txt:
+# `zypper` reads, `transactional-update` is the only thing allowed to write (zypper in
+# refuses outright here), and `systemctl` is what PKG_APPLY reboots through.
+PKG_UNLISTED_TOOLS=zypper transactional-update systemctl
+
 # ── scheduler (required) ──────────────────────────────────────────────────────
 SCHEDULER=systemd
 SCHEDULER_UNIT_DIR=~/.config/systemd/user
