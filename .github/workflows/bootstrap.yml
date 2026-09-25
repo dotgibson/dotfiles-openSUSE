@@ -83,7 +83,7 @@ jobs:
       # governs Core's own workflows, not caller inputs (dotfiles-Alpine passes `alpine:3.24`).
       # The reusable's `docker run "$IMAGE"` and Core's fleet-bootstrap-matrix.py (the weekly
       # real-bootstrap sweep) take this registry-qualified ref verbatim.
-      image: registry.opensuse.org/opensuse/tumbleweed:20260922
+      image: registry.opensuse.org/opensuse/tumbleweed:20260923
       # openSUSE Tumbleweed's OSS mirror (cdn.opensuse.org) intermittently times out
       # in CI (curl error 28), and a single `zypper install` has no retry, so one slow
       # fetch fails the whole links-only job (zsh "no provider" -> exit 104). Retry the
@@ -167,7 +167,7 @@ jobs:
   transactional:
     uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v7
     with:
-      image: registry.opensuse.org/opensuse/tumbleweed:20260922
+      image: registry.opensuse.org/opensuse/tumbleweed:20260923
       # Same prep as the leg above, arch guard included (explained there), plus the export.
       prep: 'a=$(rpm -q --qf %{ARCH} bash); [ "$a" = x86_64 ] || { echo "container is $a, not x86_64: this date tag has no amd64 manifest entry and docker pulled the 386 image as compatible; bump to a tag whose manifest list carries amd64 (registry.opensuse.org/v2/opensuse/tumbleweed/manifests/<tag>)" >&2; exit 1; }; for i in 1 2 3 4 5; do if zypper --non-interactive --gpg-auto-import-keys refresh && zypper --non-interactive --gpg-auto-import-keys install bash zsh; then break; fi; echo "zypper prep attempt $i failed (mirror timeout?), retrying in $((i*10))s..." >&2; sleep $((i*10)); done; command -v zsh >/dev/null || { echo "zsh still not installed after 5 attempts" >&2; exit 1; }; export BOOTSTRAP_TOLERATE_FAILURES=1'
       provision_stub: true
