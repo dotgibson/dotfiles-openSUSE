@@ -16,12 +16,19 @@
 #                    core/PORTING-MATRIX.md footnote ¹⁸. Installed by bootstrap.sh (below).
 #   - mise         — no OSS package exists; mise.run stays its primary path.
 #
-# Listed here but flavor-dependent — the one entry that is neither purely packaged
+# Listed here but flavor-dependent — the entries that are neither purely packaged
 # nor purely bootstrap-installed:
 #   - tealdeer     — packaged on Tumbleweed, absent from Leap 16.x's primary repos. It
 #                    stays in the list so Tumbleweed takes the signed-repo path; on Leap
 #                    zypper skips the name and bootstrap.sh's presence-guarded
 #                    `cargo install --locked tealdeer` supplies `tldr`. See its entry below.
+#   - jc           — packaged on Tumbleweed (and so on the transactional edition, which
+#                    installs from Tumbleweed's repo-oss), absent from Leap 16.0 and 16.1
+#                    alike. Same list-it-anyway shape as tealdeer, but with NO bootstrap
+#                    fallback: there is no Python tool installer on the box to supply one.
+#                    Leap instead declares jc opt-in (os/opensuse.leap.capabilities'
+#                    TOOLS_OPTIN), so core-doctor reports it as optional there rather than
+#                    missing. See its entry below.
 
 # ── shell + multiplexer ───────────────────────────────────────
 zsh
@@ -73,6 +80,13 @@ duf            # df (disk free)
 procs          # ps
 sd             # sed (find/replace)
 gron           # greppable JSON
+jc             # command output -> JSON (dotgibson/dotfiles-core#1208). Tumbleweed repo-oss
+               # 1.26.0, noarch, ships /usr/bin/jc (checked 2026-09-29). NOT in Leap 16.0 or
+               # 16.1 — neither repo-oss nor Backports:SLE-16.x — and the 1.22.4 in 15.6's
+               # Package Hub is on an EOL release. No bootstrap fallback, deliberately: a
+               # `pip install` fights PEP 668 and this repo installs neither pipx nor uv, so
+               # that would be new machinery for one tool. On Leap zypper skips the name and
+               # TOOLS_OPTIN in os/opensuse.leap.capabilities marks it opt-in instead.
 glow           # markdown renderer
 gum            # shell-script UI toolkit
 xh             # HTTPie-like (HTTP client)

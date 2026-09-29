@@ -27,15 +27,15 @@
 # targets; a Leap box gets the other file, and a Leap→Tumbleweed migration is a
 # re-bootstrap, which it already is for every other reason.
 #
-# TUMBLEWEED IS THE DEFAULT BUT THE FILES ARE NOT INTERCHANGEABLE. Two keys differ,
-# and both differences are load-bearing — see PKG_UPGRADE and the scheduled-runner
-# section below. Keep the rest in step by hand; there is deliberately no generator.
+# TUMBLEWEED IS THE DEFAULT BUT THE FILES ARE NOT INTERCHANGEABLE. Three keys differ,
+# and every difference is load-bearing — see PKG_UPGRADE, the scheduled-runner section
+# and TOOLS_OPTIN below. Keep the rest in step by hand; there is deliberately no generator.
 #
 # A `#` INSIDE A VALUE IS NOT A COMMENT — the reader keeps it. Notes go above.
 
 # ── package-manager verbs (all required) ──────────────────────────────────────
 PKG_REFRESH=sudo zypper refresh
-# `dup`, NOT `up` — THE FIRST OF THE TWO KEYS THAT DIFFER FROM THE LEAP FILE.
+# `dup`, NOT `up` — THE FIRST OF THE THREE KEYS THAT DIFFER FROM THE LEAP FILE.
 # Tumbleweed is rolling and upgrades as a distribution; `zypper up` on it holds
 # packages back and leaves a box in a state neither dialect describes.
 PKG_UPGRADE=sudo zypper dup
@@ -101,4 +101,9 @@ PKG_PENDING_FIELD=3
 # append their own two.
 #
 # jj and ast-grep stay OUT: this repo packages both, so they are genuinely expected here.
+#
+# THE THIRD KEY THAT DIFFERS FROM THE LEAP FILE, and only by one word: Leap appends `jc`,
+# which Tumbleweed packages (install/packages.txt) and Leap 16.x does not ship at all, so
+# it is expected here and opt-in there (dotgibson/dotfiles-core#1208). Every other name
+# must match; test/check-flavors.sh holds the Leap list to exactly this one plus jc.
 TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv

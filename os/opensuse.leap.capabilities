@@ -27,15 +27,15 @@
 # targets; a Leap box gets the other file, and a Leap→Tumbleweed migration is a
 # re-bootstrap, which it already is for every other reason.
 #
-# THE FILES ARE NOT INTERCHANGEABLE. Two keys differ from the Tumbleweed file, and
-# both differences are load-bearing — see PKG_UPGRADE and the scheduled-runner section
-# below. Keep the rest in step by hand; there is deliberately no generator.
+# THE FILES ARE NOT INTERCHANGEABLE. Three keys differ from the Tumbleweed file, and
+# every difference is load-bearing — see PKG_UPGRADE, the scheduled-runner section and
+# TOOLS_OPTIN below. Keep the rest in step by hand; there is deliberately no generator.
 #
 # A `#` INSIDE A VALUE IS NOT A COMMENT — the reader keeps it. Notes go above.
 
 # ── package-manager verbs (all required) ──────────────────────────────────────
 PKG_REFRESH=sudo zypper refresh
-# `up`, NOT `dup` — THE FIRST OF THE TWO KEYS THAT DIFFER FROM THE TUMBLEWEED FILE.
+# `up`, NOT `dup` — THE FIRST OF THE THREE KEYS THAT DIFFER FROM THE TUMBLEWEED FILE.
 # Leap is a versioned, stable release: `up` applies the maintenance updates it is
 # meant to receive. `zypper dup` on Leap re-resolves the whole distribution against
 # whatever repositories are enabled and is how you accidentally migrate a box.
@@ -101,4 +101,12 @@ MAINT_UNATTENDED_UPGRADE=1
 # append their own two.
 #
 # jj and ast-grep stay OUT: this repo packages both, so they are genuinely expected here.
-TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv
+#
+# `jc` IS APPENDED HERE AND NOT IN THE TUMBLEWEED FILE — THE THIRD KEY THAT DIFFERS
+# (dotgibson/dotfiles-core#1208). Tumbleweed packages it; Leap 16.0 and 16.1 ship it in
+# neither repo-oss nor Backports, zypper skips the name, and there is no Python tool
+# installer on the box for a bootstrap fallback to use. So jc is optional HERE, not
+# missing — without this word core-doctor would render a ✗ on every Leap box for a tool
+# nothing will install. Everything before it must match the Tumbleweed list exactly;
+# test/check-flavors.sh enforces that. Drop the word if Leap ever packages jc.
+TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv jc

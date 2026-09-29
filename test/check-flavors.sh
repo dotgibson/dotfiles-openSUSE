@@ -26,6 +26,10 @@
 #   MAINT_UNATTENDED_UPGRADE   — declared on Leap ONLY. On Tumbleweed the same flag
 #                                would drive `dup`, i.e. an unattended DISTRIBUTION
 #                                upgrade on a rolling distro. Divergent.
+#   TOOLS_OPTIN                — Leap's is Tumbleweed's plus exactly LEAP_OPTIN_EXTRA:
+#                                tools Tumbleweed packages and Leap 16.x does not ship
+#                                (jc, dotgibson/dotfiles-core#1208). Divergent, but only
+#                                by that suffix.
 #   everything else            — identical, key for key and value for value.
 #
 # Tumbleweed vs the transactional edition (a Tumbleweed base — still `dup`):
@@ -87,7 +91,11 @@ MICROOS=os/opensuse.microos.capabilities
 # The keys the two files are DECLARED to disagree on. Anything else that differs is the
 # finding. Adding a key here is a deliberate widening of the contract — it should arrive
 # with the comment in both declarations that explains why.
-DIVERGENT="PKG_UPGRADE MAINT_UNATTENDED_UPGRADE"
+DIVERGENT="PKG_UPGRADE MAINT_UNATTENDED_UPGRADE TOOLS_OPTIN"
+# The names Leap's TOOLS_OPTIN appends to Tumbleweed's, and the only difference allowed
+# between the two lists. Each is in install/packages.txt for Tumbleweed and in
+# test/check-packages.sh's LEAP_OPTIONAL, because Leap does not ship it.
+LEAP_OPTIN_EXTRA="jc"
 # The same contract for Tumbleweed vs the transactional edition: the verbs that change
 # value, the keys only the transactional file declares, and the keys only it omits.
 MICROOS_DIVERGENT="PKG_UPGRADE PKG_INSTALL PKG_REMOVE"
@@ -191,6 +199,21 @@ if [[ "$leap_unattended" != 1 ]]; then
   note_fail "$LEAP: MAINT_UNATTENDED_UPGRADE is '${leap_unattended:-absent}', expected 1 — Leap's maintenance updates to a versioned release are exactly what an unattended nightly is for, and dropping the flag silently retires that behaviour"
 else
   printf '  %-12s %s\n' "Leap" "1"
+fi
+
+# ── 2b. TOOLS_OPTIN: Leap appends, and appends only LEAP_OPTIN_EXTRA ──────────
+# Divergent by exactly a suffix, so the shared prefix is still held to identity — this
+# is not a licence for the two lists to drift apart.
+say "TOOLS_OPTIN — Leap's is Tumbleweed's plus: $LEAP_OPTIN_EXTRA"
+tw_optin="$(cap_get "$TW_DUMP" TOOLS_OPTIN)" || tw_optin=""
+leap_optin="$(cap_get "$LEAP_DUMP" TOOLS_OPTIN)" || leap_optin=""
+want_optin="${tw_optin:+$tw_optin }$LEAP_OPTIN_EXTRA"
+if [[ -z "$tw_optin" ]]; then
+  note_fail "$TW declares no TOOLS_OPTIN — Leap's is defined as Tumbleweed's plus '$LEAP_OPTIN_EXTRA'"
+elif [[ "$leap_optin" != "$want_optin" ]]; then
+  note_fail "$LEAP: TOOLS_OPTIN is '${leap_optin:-absent}', expected '$want_optin' — Tumbleweed's list plus exactly the Leap-only names ($LEAP_OPTIN_EXTRA)"
+else
+  printf '  %-12s %s\n' "Leap" "Tumbleweed's list + $LEAP_OPTIN_EXTRA"
 fi
 
 # ── 3. every OTHER key is identical, key for key and value for value ──────────

@@ -55,8 +55,8 @@
 #
 # RUN IT WHERE THE ANSWER IS TRUE. Availability is a property of the repos on the box,
 # and Tumbleweed and Leap disagree BY DESIGN — install/packages.txt documents the
-# flavor-dependent entries, and bootstrap.sh cargo-builds them on Leap. Those names are
-# listed in LEAP_OPTIONAL below and are a warning there rather than a failure. The
+# flavor-dependent entries, and Leap covers each another way (bootstrap.sh cargo-builds
+# tealdeer; jc is declared opt-in). Those names are listed in LEAP_OPTIONAL below and are a warning there rather than a failure. The
 # authoritative resolve is the workflow, in a pinned container.
 #
 # Exit codes:
@@ -85,11 +85,13 @@ ok() { printf '%s%s%s %s\n' "${UX_GRN:-}" "${UX_OK:-+}" "${UX_RST:-}" "$*"; }
 bad() { printf '%s%s%s %s\n' "${UX_YEL:-}" "${UX_WARN:-!}" "${UX_RST:-}" "$*" >&2; }
 
 # Names install/packages.txt documents as flavor-dependent: present on Tumbleweed,
-# absent from Leap 16.x's primary repos, and supplied there by a presence-guarded
-# bootstrap.sh fallback instead. They stay in the list so Tumbleweed takes the
-# signed-repo path, so a Leap run must report them as expected-absent rather than as
-# drift. Keep this in step with the entries in install/packages.txt that say so.
-LEAP_OPTIONAL="tealdeer"
+# absent from Leap 16.x's primary repos, and covered there another way: tealdeer by a
+# presence-guarded bootstrap.sh cargo build, jc by being declared opt-in in
+# os/opensuse.leap.capabilities' TOOLS_OPTIN (no Python tool installer exists on the box
+# to supply it). They stay in the list so Tumbleweed takes the signed-repo path, so a
+# Leap run must report them as expected-absent rather than as drift. Keep this in step
+# with the entries in install/packages.txt that say so.
+LEAP_OPTIONAL="tealdeer jc"
 
 manifest="${1:-install/packages.txt}"
 [[ -f "$manifest" ]] || {
@@ -265,9 +267,9 @@ resolve_or_skip() {
     case " $LEAP_OPTIONAL " in
     *" $p "*)
       if [[ "$flavor" == Leap ]]; then
-        # Documented in install/packages.txt: absent from Leap 16.x, supplied there by a
-        # presence-guarded cargo build. Expected, so not a finding.
-        bad "$p — did not resolve, but install/packages.txt documents it as Tumbleweed-only; bootstrap.sh cargo-builds it on Leap"
+        # Documented in install/packages.txt: absent from Leap 16.x, and its entry there
+        # names Leap's route (a cargo fallback, or opt-in). Expected, so not a finding.
+        bad "$p — did not resolve, but install/packages.txt documents it as Tumbleweed-only; its entry there names the Leap route"
         continue
       fi
       ;;
@@ -335,8 +337,9 @@ A non-resolving name is one of:
   • a drop         — remove it, or add a presence-guarded fallback in bootstrap.sh
   • a typo         — fix it
   • flavor drift   — real on Tumbleweed, absent on Leap. If bootstrap.sh already has a
-                     fallback for it, add the name to LEAP_OPTIONAL in this test and say
-                     so in install/packages.txt, the way tealdeer does.
+                     fallback for it (tealdeer), or Leap declares it in TOOLS_OPTIN (jc),
+                     add the name to LEAP_OPTIONAL in this test and say so in
+                     install/packages.txt, the way those two do.
 A name BELOW its floor on Tumbleweed means Core's pin has moved past what the rolling
 target ships: raise it upstream (dotfiles-core) rather than lowering the `# min:` here.
 EOF
