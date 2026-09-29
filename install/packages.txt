@@ -11,7 +11,7 @@
 #   - viddy        — cargo build for the upstream-latest version. crates.io with --locked
 #                    is a different risk profile from piping a URL to sh, and it is
 #                    presence-guarded, so packaging it would be harmless too.
-#   - doggo        — go build for the upstream-latest version. Packaged on TW (1.3.0) and
+#   - doggo        — go build for the upstream-latest version. Packaged on TW (1.4.0) and
 #                    Leap 16.x (1.0.5, Backports) but declined, like viddy — see
 #                    core/PORTING-MATRIX.md footnote ¹⁸. Installed by bootstrap.sh (below).
 #   - mise         — no OSS package exists; mise.run stays its primary path.
@@ -94,13 +94,14 @@ ast-grep       # AST-aware structural search/rewrite (TW 0.45.3, Leap 16.x 0.28.
                # setgroups(1) — Core's footnote 11 has that autopsy. Same gap as ouch: no
                # bootstrap installer, so this list is its only automatic path (#113).
 tree-sitter    # tree-sitter CLI. nvim-treesitter (pinned to `main`) compiles parsers on the
-               # box and needs the CLI at >= 0.26.1; openSUSE ships 0.26.8 on all three.
+               # box and needs the CLI at >= 0.26.1; TW 0.27.0, Leap 16.x 0.26.8 — all clear.
                # NOTE THE NAME. openSUSE has no `tree-sitter-cli` package — that is the
                # Arch/Alpine split name, and looking for it under that name is exactly how
                # this list concluded "genuinely unpackaged" and cargo-built it instead. The
                # CLI is in the BASE `tree-sitter` package; the shared library is what got
-               # split off, as `libtree-sitter0_26`. Mac inverts this: there `tree-sitter` is
-               # the lib-only formula and `tree-sitter-cli` is the one you want.
+               # split off, as `libtree-sitter0_27` on TW (`libtree-sitter0_26` on Leap
+               # 16.x). Mac inverts this: there `tree-sitter` is the lib-only formula and
+               # `tree-sitter-cli` is the one you want.
                # bootstrap.sh's cargo build stays as a presence-guarded fallback (#113).
 # Installed by bootstrap.sh, not packaged here:
 #   - go-installed:  doggo (DNS), sesh (tmux)
