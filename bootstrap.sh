@@ -343,7 +343,7 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
     # `mise exec go@latest` on a box with no Go fails in ~2s instead of downloading it
     # (dotgibson/dotfiles-Fedora#209). It is a no-op once Go is present.
     { mise install go@latest && GOBIN="$gobin" mise exec go@latest -- go install "$1"; } >/dev/null 2>&1 ||
-      _note_fail "$2 — go install failed; retry: GOBIN=$gobin go install $1"
+      _note_fail "$2 — Go via mise failed (toolchain install or build); retry: mise install go@latest && GOBIN=$gobin mise exec go@latest -- go install $1"
   else
     _note_fail "$2 — needs a Go toolchain; install Go then: GOBIN=$gobin go install $1"
   fi
@@ -624,7 +624,7 @@ provision() {
       # `mise exec go@latest` on a box with no Go fails in ~2s instead of downloading it
       # (dotgibson/dotfiles-Fedora#209). It is a no-op once Go is present.
       { mise install go@latest && GOBIN="$yqbin" mise exec go@latest -- go install "$yqpath"; } >/dev/null 2>&1 ||
-        _note_fail "yq — go install failed; retry: GOBIN=$yqbin go install $yqpath"
+        _note_fail "yq — Go via mise failed (toolchain install or build); retry: mise install go@latest && GOBIN=$yqbin mise exec go@latest -- go install $yqpath"
     else
       _note_fail "yq — needs a Go toolchain; install Go then: GOBIN=$yqbin go install $yqpath"
     fi
