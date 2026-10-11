@@ -78,6 +78,7 @@ SCHEDULER_UNIT_DIR=~/.config/systemd/user
 
 # ── optional tools ────────────────────────────────────────────────────────────
 # Carried over from the Tumbleweed file unchanged: what is optional on the archive does
-# not change with how the archive is applied. The list repeats Core's nine because a
-# declared TOOLS_OPTIN REPLACES the default rather than adding to it (see that file).
-TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv
+# not change with how the archive is applied. This repo installs Core's opt-in set, and
+# `ouch` stays only so the list is not empty, because a declared TOOLS_OPTIN REPLACES the
+# default rather than adding to it (see that file).
+TOOLS_OPTIN=ouch

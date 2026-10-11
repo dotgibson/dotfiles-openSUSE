@@ -517,6 +517,15 @@ provision() {
       _note_fail "tealdeer — cargo build failed; retry: cargo install --locked tealdeer (on Leap 16.0 ONLY you can instead add the utilities OBS repo: zypper ar https://download.opensuse.org/repositories/utilities/16.0/ utilities — that repo has no 16.1 build, so on 16.1 cargo is the only route)"
   fi
 
+  # jnv (interactive jq filter) — from Core's opt-in set, which this repo installs (see
+  # TOOLS_OPTIN in os/opensuse.capabilities). openSUSE does not package it on Tumbleweed
+  # or Leap, so cargo is its only path. The crate and the binary are both `jnv`.
+  if ! command -v jnv >/dev/null && command -v cargo >/dev/null; then
+    blib_say "jnv (cargo — interactive jq; not packaged on openSUSE)"
+    cargo install --locked jnv >/dev/null 2>&1 ||
+      _note_fail "jnv — cargo build failed; retry: cargo install --locked jnv"
+  fi
+
   # ── go/vendor tools from the core-doctor set ─────────────────────────────────
   # sesh is genuinely absent from the openSUSE repos; doggo IS in Tumbleweed's
   # repo-oss, but is go-installed here for the same upstream-latest reason as the

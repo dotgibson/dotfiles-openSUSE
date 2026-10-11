@@ -32,6 +32,10 @@
 #   - difftastic   — the jc shape exactly: packaged on Tumbleweed (and so on the
 #                    transactional edition), absent from Leap 16.0 and 16.1, no bootstrap
 #                    fallback, and declared opt-in (`difft`) in Leap's TOOLS_OPTIN instead.
+#   - lnav         — the same shape as difftastic: Tumbleweed only, opt-in on Leap.
+#
+# Core's opt-in set (core-doctor's `·` tools) is installed here too, in its own section
+# below. Only jnv is unpackaged; bootstrap.sh cargo-builds it.
 
 # ── shell + multiplexer ───────────────────────────────────────
 zsh
@@ -120,7 +124,25 @@ tree-sitter    # tree-sitter CLI. nvim-treesitter (pinned to `main`) compiles pa
                # 16.x). Mac inverts this: there `tree-sitter` is the lib-only formula and
                # `tree-sitter-cli` is the one you want.
                # bootstrap.sh's cargo build stays as a presence-guarded fallback (#113).
+
+# ── Core's opt-in set (installed on purpose) ──────────────────
+# core-doctor calls these optional (`·`) by default. This repo installs them, so
+# os/opensuse*.capabilities no longer list them in TOOLS_OPTIN, and a missing one is a ✗.
+# Checked 2026-10-11 against Tumbleweed and Leap 16.0/16.1 repo-oss + Backports.
+hyperfine      # benchmarking. TW + Leap 16.x
+watchexec      # run a command on file change. TW + Leap 16.x
+ShellCheck     # binary `shellcheck`. NOTE THE CASE: the package is `ShellCheck`. TW + Leap
+shfmt          # shell formatter. TW + Leap 16.x (3.5.1, old but works)
+git-absorb     # automatic `git commit --fixup`. TW + Leap 16.x
+gping          # ping with a graph. TW + Leap 16.x
+lnav           # log file navigator. Tumbleweed ONLY, absent from Leap 16.0/16.1 repo-oss and
+               # Backports. On Leap zypper skips it and Leap's TOOLS_OPTIN declares it opt-in.
+python3-uv     # uv (binary `uv`). Like python3-pip below, this is a CAPABILITY: what installs
+               # is `python313-uv` (TW, and Leap 16.x at 0.7.18), which Provides this name.
+# jnv (interactive jq) has no openSUSE package at all; bootstrap.sh cargo-builds it.
+
 # Installed by bootstrap.sh, not packaged here:
+#   - cargo-built:   jnv (interactive jq); viddy; tealdeer on Leap
 #   - go-installed:  doggo (DNS), sesh (tmux)
 #   - upstream rpm:  carapace (completions) — NOT go-installed; `go install` cannot work
 #                    for any version of it (replace directives + uncommitted generated

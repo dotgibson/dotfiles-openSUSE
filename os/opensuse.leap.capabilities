@@ -85,35 +85,29 @@ PKG_PENDING_FIELD=3
 MAINT_UNATTENDED_UPGRADE=1
 
 # ── optional tools ────────────────────────────────────────────────────────────
-# TOOLS_OPTIN, and the reason it exists now when it deliberately did not before.
+# TOOLS_OPTIN. Same as the Tumbleweed file: this repo installs Core's opt-in set, so the
+# list keeps only `ouch` (packaged, kept so the list is not empty) and then appends the
+# names Leap cannot install. See that file for the full rationale.
 #
-# The old note said there was no delta from Core's default: PORTING-MATRIX.md's ²¹ cells
-# showed openSUSE PACKAGING jj and ast-grep, the two tools opt-in on Gentoo and the Debian
-# family, so a copy here could only drift. That was true — and `uv` is the delta that ended
-# it (dotfiles-core#836). This repo installs no `uv`: it is in no `install/packages.txt`
-# line, so `core-doctor` counted it EXPECTED and rendered a ✗ on every openSUSE box for a
-# tool the bootstrap was never going to put there. The matrix cell now carries ²¹ to say so.
-#
-# THE LIST REPEATS CORE'S NINE, because a declared TOOLS_OPTIN REPLACES the
-# _CORE_DOCTOR_OPTIN default rather than adding to it — declaring `uv` alone would have
-# turned the other nine back into expected-and-missing, trading one false ✗ for nine. Same
-# shape as dotfiles-Gentoo's and dotfiles-Debian's declarations, which repeat the nine and
-# append their own two.
-#
-# jj and ast-grep stay OUT: this repo packages both, so they are genuinely expected here.
-# jj's Leap build is old (0.22.0 from Backports:SLE-16.x, checked 2026-10-11, against
-# Tumbleweed's 0.46.0), but it installs, so it is expected rather than opt-in.
+# jj and ast-grep are packaged and so are expected here. jj's Leap build is old (0.22.0
+# from Backports:SLE-16.x, checked 2026-10-11, against Tumbleweed's 0.46.0), but it
+# installs, so it is expected rather than opt-in.
 #
 # `jc` IS APPENDED HERE AND NOT IN THE TUMBLEWEED FILE — THE THIRD KEY THAT DIFFERS
 # (dotgibson/dotfiles-core#1208). Tumbleweed packages it; Leap 16.0 and 16.1 ship it in
 # neither repo-oss nor Backports, zypper skips the name, and there is no Python tool
 # installer on the box for a bootstrap fallback to use. So jc is optional HERE, not
 # missing — without this word core-doctor would render a ✗ on every Leap box for a tool
-# nothing will install. Everything before it must match the Tumbleweed list exactly;
+# nothing will install. The `ouch` before it must match the Tumbleweed list exactly;
 # test/check-flavors.sh enforces that. Drop the word if Leap ever packages jc.
 #
 # `difft` IS APPENDED FOR THE SAME REASON. Tumbleweed packages `difftastic`; Leap 16.0 and
 # 16.1 ship it in neither repo-oss nor Backports:SLE-16.x (checked 2026-10-11). zypper skips
 # the name, and a cargo build is not worth it for a tool Core wires only as the on-demand
 # `git dft`. Drop the word if Leap ever packages difftastic.
-TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv jc difft
+#
+# `lnav` IS APPENDED FOR THE SAME REASON. Tumbleweed packages it; Leap 16.0 and 16.1 ship it
+# in neither repo-oss nor Backports:SLE-16.x (checked 2026-10-11). The rest of Core's opt-in
+# set installs on Leap: gping, ShellCheck, shfmt, hyperfine, watchexec and git-absorb are
+# packaged, python3-uv is provided by python313-uv, and bootstrap.sh cargo-builds jnv.
+TOOLS_OPTIN=ouch jc difft lnav

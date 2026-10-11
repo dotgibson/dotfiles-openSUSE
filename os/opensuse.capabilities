@@ -85,28 +85,27 @@ PKG_PENDING_FIELD=3
 # Leap is versioned and upgrades with `up`, so it declares the flag. Apply with `up`.
 
 # ── optional tools ────────────────────────────────────────────────────────────
-# TOOLS_OPTIN, and the reason it exists now when it deliberately did not before.
+# TOOLS_OPTIN. A declared list REPLACES Core's _CORE_DOCTOR_OPTIN default (nine tools)
+# rather than adding to it, so it must name every tool this repo does NOT install.
 #
-# The old note said there was no delta from Core's default: PORTING-MATRIX.md's ²¹ cells
-# showed openSUSE PACKAGING jj and ast-grep, the two tools opt-in on Gentoo and the Debian
-# family, so a copy here could only drift. That was true — and `uv` is the delta that ended
-# it (dotfiles-core#836). This repo installs no `uv`: it is in no `install/packages.txt`
-# line, so `core-doctor` counted it EXPECTED and rendered a ✗ on every openSUSE box for a
-# tool the bootstrap was never going to put there. The matrix cell now carries ²¹ to say so.
+# THIS REPO INSTALLS CORE'S OPT-IN SET. hyperfine, watchexec, shellcheck, shfmt, git-absorb,
+# gping, lnav and uv come from install/packages.txt (uv as `python3-uv`), and jnv is
+# cargo-built by bootstrap.sh because openSUSE does not package it. All of them are
+# expected here, so a box missing one gets a ✗ in core-doctor, and that is correct. The
+# list used to repeat Core's nine plus `uv` (dotfiles-core#836), when none of them was
+# installed.
 #
-# THE LIST REPEATS CORE'S NINE, because a declared TOOLS_OPTIN REPLACES the
-# _CORE_DOCTOR_OPTIN default rather than adding to it — declaring `uv` alone would have
-# turned the other nine back into expected-and-missing, trading one false ✗ for nine. Same
-# shape as dotfiles-Gentoo's and dotfiles-Debian's declarations, which repeat the nine and
-# append their own two.
+# `ouch` is the one name left. It IS packaged (install/packages.txt, #113) and was among
+# Core's nine before that. It stays here only because a declared-but-empty TOOLS_OPTIN
+# would put Core's default nine back. Do not remove it unless you replace it with another
+# name.
 #
-# jj, difft and ast-grep stay OUT: this repo packages all three (`jujutsu`, `difftastic`,
-# `ast-grep` in install/packages.txt), so they are genuinely expected here. jj and difft
-# were left out of the list for a while, and core-doctor rightly showed both as ✗.
+# jj, difft and ast-grep are packaged too (`jujutsu`, `difftastic`, `ast-grep`), so they
+# are not listed. jj and difft were left out of install/packages.txt for a while, and
+# core-doctor rightly showed both as ✗.
 #
-# THE THIRD KEY THAT DIFFERS FROM THE LEAP FILE, and only by two words: Leap appends `jc`
-# and `difft`, which Tumbleweed packages (install/packages.txt) and Leap 16.x does not ship
-# at all, so they are expected here and opt-in there (dotgibson/dotfiles-core#1208). Every
-# other name must match; test/check-flavors.sh holds the Leap list to exactly this one plus
-# jc and difft.
-TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv
+# THE THIRD KEY THAT DIFFERS FROM THE LEAP FILE. Leap appends `jc`, `difft` and `lnav`,
+# which Tumbleweed packages and Leap 16.x does not ship at all, so they are expected here
+# and opt-in there (dotgibson/dotfiles-core#1208). Every other name must match;
+# test/check-flavors.sh holds the Leap list to exactly this one plus those three.
+TOOLS_OPTIN=ouch
