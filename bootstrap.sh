@@ -258,9 +258,14 @@ zypper_install() {
     local -a avail=() p
     for p in "${pkgs[@]}"; do
       # already installed → nothing to transact (a re-run otherwise re-transacts the whole
-      # list into three more snapshots — measured on iteration 2, snapshots 6–8)
-      rpm -q "$p" >/dev/null 2>&1 && continue
-      zypper --non-interactive --quiet se --match-exact --type package "$p" >/dev/null 2>&1 && avail+=("$p") || {
+      # list into three more snapshots — measured on iteration 2, snapshots 6–8).
+      # Both checks are CAPABILITY-aware, not name-only: install/packages.txt lists names
+      # like `python3-uv` and `python3-pip` that no package is called — `python313-uv`
+      # Provides them. A plain `rpm -q` / `se --match-exact` misses those, so the name was
+      # dropped as "unavailable" and never transacted (PR #229 review). Every package
+      # provides its own name, so --whatprovides / --provides still match real names.
+      rpm -q --whatprovides "$p" >/dev/null 2>&1 && continue
+      zypper --non-interactive --quiet se --match-exact --provides --type package "$p" >/dev/null 2>&1 && avail+=("$p") || {
         echo "   skipped (unavailable on this box?): $p"
         _note_fail "package '$p' — not available; check with: zypper se --provides $p"
       }
@@ -581,6 +586,15 @@ provision() {
     blib_say "tealdeer (cargo — tldr; not in Leap's primary repos)"
     cargo_install --locked tealdeer >/dev/null 2>&1 ||
       _note_fail "tealdeer — cargo build failed; retry: cargo install --locked tealdeer (on Leap 16.0 ONLY you can instead add the utilities OBS repo: zypper ar https://download.opensuse.org/repositories/utilities/16.0/ utilities — that repo has no 16.1 build, so on 16.1 cargo is the only route)"
+  fi
+
+  # jnv (interactive jq filter) — from Core's opt-in set, which this repo installs (see
+  # TOOLS_OPTIN in os/opensuse.capabilities). openSUSE does not package it on Tumbleweed
+  # or Leap, so cargo is its only path. The crate and the binary are both `jnv`.
+  if ! command -v jnv >/dev/null && command -v cargo >/dev/null; then
+    blib_say "jnv (cargo — interactive jq; not packaged on openSUSE)"
+    cargo install --locked jnv >/dev/null 2>&1 ||
+      _note_fail "jnv — cargo build failed; retry: cargo install --locked jnv"
   fi
 
   # ── go/vendor tools from the core-doctor set ─────────────────────────────────
