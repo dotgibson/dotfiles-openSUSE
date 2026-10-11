@@ -455,7 +455,10 @@ provision() {
     _note_fail "yazi — not on PATH and not at ~/.cargo/bin/yazi. Preferred fix: sudo zypper in yazi (it is packaged, and in install/packages.txt). Upstream alternative: cargo install --locked yazi-fm yazi-cli, which yields 'yazi' + 'ya'"
   fi
   # mise — polyglot runtime manager; activated in core/zsh/00-tools.zsh. Runtimes are
-  # fetched separately with `mise install` (kept out of bootstrap). No OSS package
+  # fetched separately with `mise install` (kept out of bootstrap), with ONE exception:
+  # when no system Go exists, the Go fallbacks (_dotfiles_go_install and the yq build)
+  # run `mise install go@latest` so they have a toolchain to build with. Nothing else
+  # installs a runtime here, and that path never runs on a box with zypper's Go. No OSS package
   # exists, so mise.run stays the primary path — but its output is no longer discarded.
   if ! command -v mise >/dev/null && [[ ! -x "$HOME/.local/bin/mise" ]]; then
     blib_say "mise (official installer — not packaged on openSUSE)"
