@@ -370,7 +370,73 @@ _render_placeholder() {
   printf '%s' "$out$text"
 }
 
+# Script scope, so cleanup only ever consumes a dir THIS invocation's mktemp made: a
+# --links-only or --dry-run run never calls _boot_tmp_setup but still reaches
+# bootstrap_closing, and must not act on a _BOOT_TMP inherited from the environment.
+_BOOT_TMP=""
+export -n _BOOT_TMP 2>/dev/null || true
+
+# ── cargo builds go to DISK, not /tmp (dotfiles-Fedora#208) ────────────────────
+# `cargo install` builds in $TMPDIR (default /tmp), and yazi-build nests a second build
+# there too. Where /tmp is a tmpfs (systemd's default, often with a per-user quota) a few
+# crates fill it on a small box, and every later build and download fails with EDQUOT /
+# ENOSPC. _boot_tmp_setup points TMPDIR at a per-run dir on disk for the rest of
+# provisioning — unique per run (mktemp -d), so the sweeps below never reach into a
+# second bootstrap running at the same time. Ported from dotfiles-Fedora.
+_boot_tmp_setup() {
+  _BOOT_TMPDIR_ORIG="${TMPDIR-}"
+  _BOOT_TMPDIR_WAS_SET="${TMPDIR+1}"
+  _BOOT_TMP=""
+  local base="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles-bootstrap"
+  if mkdir -p "$base" 2>/dev/null &&
+    _BOOT_TMP="$(mktemp -d "$base/run.XXXXXX" 2>/dev/null)"; then
+    export TMPDIR="$_BOOT_TMP"
+  else
+    _BOOT_TMP=""
+    return 0
+  fi
+  # Clean up on an ABORT too (a hard exit, or set -e), not only via bootstrap_closing —
+  # else every interrupted run strands a multi-GB run dir that no later run removes.
+  # Chain onto the EXIT trap already set (Core's sudo-keepalive stop); never replace it.
+  # `trap -p` prints `trap -- '<cmd>' EXIT`, shell-quoted; eval re-splits it safely.
+  local prev
+  local -a parts=()
+  prev="$(trap -p EXIT)"
+  eval "parts=(${prev:-})"
+  # shellcheck disable=SC2064  # expand NOW, on purpose: it embeds the existing command
+  trap "${parts[2]:+${parts[2]}; }_boot_tmp_cleanup" EXIT
+  return 0
+}
+
+# cargo_install <args…> — `cargo install`, then sweep its build dirs even on FAILURE:
+# cargo keeps cargo-install* when a build dies, and yazi-build keeps its nested
+# yazi-build-*, so one failed crate would strand GBs for the rest of the run.
+cargo_install() {
+  local rc=0
+  cargo install "$@" || rc=$?
+  if [[ -n "${_BOOT_TMP:-}" ]]; then
+    rm -rf -- "$_BOOT_TMP"/cargo-install* "$_BOOT_TMP"/yazi-build-*
+  fi
+  return "$rc"
+}
+
+# _boot_tmp_cleanup — called from bootstrap_closing and the EXIT trap: drop the per-run dir and hand the
+# caller's TMPDIR back. The path guard keeps this rm from ever aiming at anything else.
+_boot_tmp_cleanup() {
+  if [[ "${_BOOT_TMP:-}" == */dotfiles-bootstrap/run.* ]]; then
+    rm -rf -- "$_BOOT_TMP"
+    if [[ -n "${_BOOT_TMPDIR_WAS_SET:-}" ]]; then
+      export TMPDIR="$_BOOT_TMPDIR_ORIG"
+    else
+      unset TMPDIR
+    fi
+    _BOOT_TMP="" # once only: the EXIT trap calls this again after bootstrap_closing
+  fi
+  return 0
+}
+
 provision() {
+  _boot_tmp_setup
   blib_say "zypper refresh (metadata)"
   zypper_retry --non-interactive --gpg-auto-import-keys refresh
 
@@ -497,7 +563,7 @@ provision() {
   # PATH and skips. Swap to `mise use -g tree-sitter` if you want it newer.
   if ! command -v tree-sitter >/dev/null && command -v cargo >/dev/null; then
     blib_say "tree-sitter-cli (cargo)"
-    cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
+    cargo_install --locked tree-sitter-cli >/dev/null 2>&1 ||
       _note_fail "tree-sitter-cli — build failed; retry: cargo install --locked tree-sitter-cli (or mise use -g tree-sitter)"
   fi
   # viddy (watch replacement; Core aliases watch->viddy, HAVE_VIDDY-guarded) is a Rust
@@ -505,7 +571,7 @@ provision() {
   # version — the guard below skips this if a package already put it on PATH.
   if ! command -v viddy >/dev/null && command -v cargo >/dev/null; then
     blib_say "viddy (cargo — watch replacement)"
-    cargo install --locked viddy >/dev/null 2>&1 ||
+    cargo_install --locked viddy >/dev/null 2>&1 ||
       _note_fail "viddy — cargo build failed; retry: cargo install --locked viddy"
   fi
 
@@ -518,7 +584,7 @@ provision() {
   # satisfied, so a packaged tldr would get rebuilt from source on every single run.
   if ! command -v tldr >/dev/null && command -v cargo >/dev/null; then
     blib_say "tealdeer (cargo — tldr; not in Leap's primary repos)"
-    cargo install --locked tealdeer >/dev/null 2>&1 ||
+    cargo_install --locked tealdeer >/dev/null 2>&1 ||
       _note_fail "tealdeer — cargo build failed; retry: cargo install --locked tealdeer (on Leap 16.0 ONLY you can instead add the utilities OBS repo: zypper ar https://download.opensuse.org/repositories/utilities/16.0/ utilities — that repo has no 16.1 build, so on 16.1 cargo is the only route)"
   fi
 
@@ -996,6 +1062,7 @@ bootstrap_wire_post_loader() {
 # prints the tally, the "finished WITH the misses above" line, and applies the exit code.
 # shellcheck disable=SC2329
 bootstrap_closing() {
+  _boot_tmp_cleanup
   if ((TU_STAGED)); then
     # PKG_APPLY's value, printed and never run — the operator reboots. No leading space
     # when the escalator is empty (root): "${BLIB_SU-sudo} x" would print "( x)".

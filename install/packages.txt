@@ -50,7 +50,7 @@ terminfo       # REQUIRED for tmux. openSUSE installs only `terminfo-base` (~45 
 
 # ── prompt + history (packaged-first; see POLICY above) ───────
 starship       # prompt. Tumbleweed repo-oss ships it first-class (PORTING-MATRIX fn.18)
-atuin          # shell history. Ditto. Older Leap may lack it -> installer fallback
+atuin          # shell history. Ditto. Leap 16.x packages it too (18.3.0, #223)
 
 # ── modern CLI core ───────────────────────────────────────────
 eza            # ls
@@ -77,11 +77,12 @@ yazi           # terminal file manager (Core aliases y/fm, sets HAVE_YAZI).
                # the corresponding bootstrap.sh block.
 
 # ── modern CLI extras (core-doctor set) ───────────────────────
-# The first eight were verified against the openSUSE OSS index (2026-08-08, #83) and the
-# four after them on 2026-08-22 (#113) — each resolves under the name written, so the old
-# "verify on-box" hedge here is discharged. The resilient zypper_install in bootstrap.sh
-# still falls back to per-package installs, so a name that's absent on an older Leap is
-# skipped rather than aborting the run.
+# The first eight bar jc (dust…gron, glow…xh) were verified against the openSUSE OSS
+# index (2026-08-08, #83) and the four from yq on 2026-08-22 (#113) — each resolves under
+# the name written on every target, so the old "verify on-box" hedge here is discharged.
+# jc came later (2026-09-29) and is Tumbleweed-only — see its entry. The resilient
+# zypper_install in bootstrap.sh still falls back to per-package installs, so a name
+# that's absent on a given release is skipped rather than aborting the run.
 dust           # du (disk usage)
 duf            # df (disk free)
 procs          # ps
@@ -167,7 +168,7 @@ neovim           # min:0.12.0 — nvim-treesitter (core/nvim, pinned to `main`) 
                  # (Debian/Gentoo/Alpine) and is what core/PORTING-MATRIX.md derives the
                  # openSUSE cell's `≥ 0.12.0` from; zypper never sees it (comments strip).
 git              # `git subtree` ships WITH git on openSUSE (no separate package, unlike Fedora)
-openssh-clients  # ssh / ssh-keygen / ssh-agent. Older Leap may call this just `openssh`
+openssh-clients  # ssh / ssh-keygen / ssh-agent. Same name on TW and Leap 16.x (#223)
 lazygit          # in openSUSE repos (unlike Fedora, which needs a COPR)
 jujutsu          # jj — opt-in colocated git companion; Core links its config and HAVE_JJ
                  # gates the aliases (core/PORTING-MATRIX.md footnote ⁸). Package `jujutsu`,
