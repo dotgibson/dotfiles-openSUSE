@@ -338,8 +338,12 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
     GOBIN="$gobin" go install "$1" >/dev/null 2>&1 ||
       _note_fail "$2 — go install failed; retry: GOBIN=$gobin go install $1"
   elif command -v mise >/dev/null 2>&1; then
-    GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 ||
-      _note_fail "$2 — go install failed; retry: GOBIN=$gobin go install $1"
+    # `mise install go@latest` FIRST: Core's mise/config.toml sets auto_install = false,
+    # and mise (verified 2026.10.7) carries that into exec_auto_install, so a bare
+    # `mise exec go@latest` on a box with no Go fails in ~2s instead of downloading it
+    # (dotgibson/dotfiles-Fedora#209). It is a no-op once Go is present.
+    { mise install go@latest && GOBIN="$gobin" mise exec go@latest -- go install "$1"; } >/dev/null 2>&1 ||
+      _note_fail "$2 — Go via mise failed (toolchain install or build); retry: mise install go@latest && GOBIN=$gobin mise exec go@latest -- go install $1"
   else
     _note_fail "$2 — needs a Go toolchain; install Go then: GOBIN=$gobin go install $1"
   fi
@@ -451,7 +455,10 @@ provision() {
     _note_fail "yazi — not on PATH and not at ~/.cargo/bin/yazi. Preferred fix: sudo zypper in yazi (it is packaged, and in install/packages.txt). Upstream alternative: cargo install --locked yazi-fm yazi-cli, which yields 'yazi' + 'ya'"
   fi
   # mise — polyglot runtime manager; activated in core/zsh/00-tools.zsh. Runtimes are
-  # fetched separately with `mise install` (kept out of bootstrap). No OSS package
+  # fetched separately with `mise install` (kept out of bootstrap), with ONE exception:
+  # when no system Go exists, the Go fallbacks (_dotfiles_go_install and the yq build)
+  # run `mise install go@latest` so they have a toolchain to build with. Nothing else
+  # installs a runtime here, and that path never runs on a box with zypper's Go. No OSS package
   # exists, so mise.run stays the primary path — but its output is no longer discarded.
   if ! command -v mise >/dev/null && [[ ! -x "$HOME/.local/bin/mise" ]]; then
     blib_say "mise (official installer — not packaged on openSUSE)"
@@ -615,8 +622,12 @@ provision() {
       GOBIN="$yqbin" go install "$yqpath" >/dev/null 2>&1 ||
         _note_fail "yq — go install failed; retry: GOBIN=$yqbin go install $yqpath"
     elif command -v mise >/dev/null 2>&1; then
-      GOBIN="$yqbin" mise exec go@latest -- go install "$yqpath" >/dev/null 2>&1 ||
-        _note_fail "yq — go install failed; retry: GOBIN=$yqbin go install $yqpath"
+      # `mise install go@latest` FIRST: Core's mise/config.toml sets auto_install = false,
+      # and mise (verified 2026.10.7) carries that into exec_auto_install, so a bare
+      # `mise exec go@latest` on a box with no Go fails in ~2s instead of downloading it
+      # (dotgibson/dotfiles-Fedora#209). It is a no-op once Go is present.
+      { mise install go@latest && GOBIN="$yqbin" mise exec go@latest -- go install "$yqpath"; } >/dev/null 2>&1 ||
+        _note_fail "yq — Go via mise failed (toolchain install or build); retry: mise install go@latest && GOBIN=$yqbin mise exec go@latest -- go install $yqpath"
     else
       _note_fail "yq — needs a Go toolchain; install Go then: GOBIN=$yqbin go install $yqpath"
     fi
