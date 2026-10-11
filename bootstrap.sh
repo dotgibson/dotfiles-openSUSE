@@ -258,9 +258,14 @@ zypper_install() {
     local -a avail=() p
     for p in "${pkgs[@]}"; do
       # already installed → nothing to transact (a re-run otherwise re-transacts the whole
-      # list into three more snapshots — measured on iteration 2, snapshots 6–8)
-      rpm -q "$p" >/dev/null 2>&1 && continue
-      zypper --non-interactive --quiet se --match-exact --type package "$p" >/dev/null 2>&1 && avail+=("$p") || {
+      # list into three more snapshots — measured on iteration 2, snapshots 6–8).
+      # Both checks are CAPABILITY-aware, not name-only: install/packages.txt lists names
+      # like `python3-uv` and `python3-pip` that no package is called — `python313-uv`
+      # Provides them. A plain `rpm -q` / `se --match-exact` misses those, so the name was
+      # dropped as "unavailable" and never transacted (PR #229 review). Every package
+      # provides its own name, so --whatprovides / --provides still match real names.
+      rpm -q --whatprovides "$p" >/dev/null 2>&1 && continue
+      zypper --non-interactive --quiet se --match-exact --provides --type package "$p" >/dev/null 2>&1 && avail+=("$p") || {
         echo "   skipped (unavailable on this box?): $p"
         _note_fail "package '$p' — not available; check with: zypper se --provides $p"
       }
