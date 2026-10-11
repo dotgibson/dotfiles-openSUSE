@@ -28,7 +28,7 @@
 #                                upgrade on a rolling distro. Divergent.
 #   TOOLS_OPTIN                — Leap's is Tumbleweed's plus exactly LEAP_OPTIN_EXTRA:
 #                                tools Tumbleweed packages and Leap 16.x does not ship
-#                                (jc, dotgibson/dotfiles-core#1208). Divergent, but only
+#                                (jc, dotgibson/dotfiles-core#1208; difft). Divergent, but only
 #                                by that suffix.
 #   everything else            — identical, key for key and value for value.
 #
@@ -95,7 +95,7 @@ DIVERGENT="PKG_UPGRADE MAINT_UNATTENDED_UPGRADE TOOLS_OPTIN"
 # The names Leap's TOOLS_OPTIN appends to Tumbleweed's, and the only difference allowed
 # between the two lists. Each is in install/packages.txt for Tumbleweed and in
 # test/check-packages.sh's LEAP_OPTIONAL, because Leap does not ship it.
-LEAP_OPTIN_EXTRA="jc"
+LEAP_OPTIN_EXTRA="jc difft"
 # The same contract for Tumbleweed vs the transactional edition: the verbs that change
 # value, the keys only the transactional file declares, and the keys only it omits.
 MICROOS_DIVERGENT="PKG_UPGRADE PKG_INSTALL PKG_REMOVE"

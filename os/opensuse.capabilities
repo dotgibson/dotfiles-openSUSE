@@ -100,10 +100,13 @@ PKG_PENDING_FIELD=3
 # shape as dotfiles-Gentoo's and dotfiles-Debian's declarations, which repeat the nine and
 # append their own two.
 #
-# jj and ast-grep stay OUT: this repo packages both, so they are genuinely expected here.
+# jj, difft and ast-grep stay OUT: this repo packages all three (`jujutsu`, `difftastic`,
+# `ast-grep` in install/packages.txt), so they are genuinely expected here. jj and difft
+# were left out of the list for a while, and core-doctor rightly showed both as ✗.
 #
-# THE THIRD KEY THAT DIFFERS FROM THE LEAP FILE, and only by one word: Leap appends `jc`,
-# which Tumbleweed packages (install/packages.txt) and Leap 16.x does not ship at all, so
-# it is expected here and opt-in there (dotgibson/dotfiles-core#1208). Every other name
-# must match; test/check-flavors.sh holds the Leap list to exactly this one plus jc.
+# THE THIRD KEY THAT DIFFERS FROM THE LEAP FILE, and only by two words: Leap appends `jc`
+# and `difft`, which Tumbleweed packages (install/packages.txt) and Leap 16.x does not ship
+# at all, so they are expected here and opt-in there (dotgibson/dotfiles-core#1208). Every
+# other name must match; test/check-flavors.sh holds the Leap list to exactly this one plus
+# jc and difft.
 TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv

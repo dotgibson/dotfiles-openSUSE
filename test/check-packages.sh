@@ -86,12 +86,13 @@ bad() { printf '%s%s%s %s\n' "${UX_YEL:-}" "${UX_WARN:-!}" "${UX_RST:-}" "$*" >&
 
 # Names install/packages.txt documents as flavor-dependent: present on Tumbleweed,
 # absent from Leap 16.x's primary repos, and covered there another way: tealdeer by a
-# presence-guarded bootstrap.sh cargo build, jc by being declared opt-in in
-# os/opensuse.leap.capabilities' TOOLS_OPTIN (no Python tool installer exists on the box
-# to supply it). They stay in the list so Tumbleweed takes the signed-repo path, so a
-# Leap run must report them as expected-absent rather than as drift. Keep this in step
-# with the entries in install/packages.txt that say so.
-LEAP_OPTIONAL="tealdeer jc"
+# presence-guarded bootstrap.sh cargo build, jc and difftastic by being declared opt-in
+# in os/opensuse.leap.capabilities' TOOLS_OPTIN (no Python tool installer exists on the
+# box to supply jc, and a cargo build is not worth it for an opt-in difft). They stay in
+# the list so Tumbleweed takes the signed-repo path, so a Leap run must report them as
+# expected-absent rather than as drift. Keep this in step with the entries in
+# install/packages.txt that say so.
+LEAP_OPTIONAL="tealdeer jc difftastic"
 
 manifest="${1:-install/packages.txt}"
 [[ -f "$manifest" ]] || {

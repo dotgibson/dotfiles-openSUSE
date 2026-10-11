@@ -101,6 +101,8 @@ MAINT_UNATTENDED_UPGRADE=1
 # append their own two.
 #
 # jj and ast-grep stay OUT: this repo packages both, so they are genuinely expected here.
+# jj's Leap build is old (0.22.0 from Backports:SLE-16.x, checked 2026-10-11, against
+# Tumbleweed's 0.46.0), but it installs, so it is expected rather than opt-in.
 #
 # `jc` IS APPENDED HERE AND NOT IN THE TUMBLEWEED FILE — THE THIRD KEY THAT DIFFERS
 # (dotgibson/dotfiles-core#1208). Tumbleweed packages it; Leap 16.0 and 16.1 ship it in
@@ -109,4 +111,9 @@ MAINT_UNATTENDED_UPGRADE=1
 # missing — without this word core-doctor would render a ✗ on every Leap box for a tool
 # nothing will install. Everything before it must match the Tumbleweed list exactly;
 # test/check-flavors.sh enforces that. Drop the word if Leap ever packages jc.
-TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv jc
+#
+# `difft` IS APPENDED FOR THE SAME REASON. Tumbleweed packages `difftastic`; Leap 16.0 and
+# 16.1 ship it in neither repo-oss nor Backports:SLE-16.x (checked 2026-10-11). zypper skips
+# the name, and a cargo build is not worth it for a tool Core wires only as the on-demand
+# `git dft`. Drop the word if Leap ever packages difftastic.
+TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping uv jc difft
