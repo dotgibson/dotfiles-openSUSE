@@ -338,7 +338,11 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
     GOBIN="$gobin" go install "$1" >/dev/null 2>&1 ||
       _note_fail "$2 — go install failed; retry: GOBIN=$gobin go install $1"
   elif command -v mise >/dev/null 2>&1; then
-    GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 ||
+    # `mise install go@latest` FIRST: Core's mise/config.toml sets auto_install = false,
+    # and mise (verified 2026.10.7) carries that into exec_auto_install, so a bare
+    # `mise exec go@latest` on a box with no Go fails in ~2s instead of downloading it
+    # (dotgibson/dotfiles-Fedora#209). It is a no-op once Go is present.
+    { mise install go@latest && GOBIN="$gobin" mise exec go@latest -- go install "$1"; } >/dev/null 2>&1 ||
       _note_fail "$2 — go install failed; retry: GOBIN=$gobin go install $1"
   else
     _note_fail "$2 — needs a Go toolchain; install Go then: GOBIN=$gobin go install $1"
@@ -615,7 +619,11 @@ provision() {
       GOBIN="$yqbin" go install "$yqpath" >/dev/null 2>&1 ||
         _note_fail "yq — go install failed; retry: GOBIN=$yqbin go install $yqpath"
     elif command -v mise >/dev/null 2>&1; then
-      GOBIN="$yqbin" mise exec go@latest -- go install "$yqpath" >/dev/null 2>&1 ||
+      # `mise install go@latest` FIRST: Core's mise/config.toml sets auto_install = false,
+      # and mise (verified 2026.10.7) carries that into exec_auto_install, so a bare
+      # `mise exec go@latest` on a box with no Go fails in ~2s instead of downloading it
+      # (dotgibson/dotfiles-Fedora#209). It is a no-op once Go is present.
+      { mise install go@latest && GOBIN="$yqbin" mise exec go@latest -- go install "$yqpath"; } >/dev/null 2>&1 ||
         _note_fail "yq — go install failed; retry: GOBIN=$yqbin go install $yqpath"
     else
       _note_fail "yq — needs a Go toolchain; install Go then: GOBIN=$yqbin go install $yqpath"
